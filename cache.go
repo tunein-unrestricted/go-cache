@@ -109,6 +109,8 @@ func (c *Cache[TKey, TValue]) Keys(checkExpired bool) []TKey {
 
 // Len returns the number of items in the cache.
 func (c *Cache[TKey, TValue]) Len(checkExpired bool) int {
+	c.mtx.RLock()
+	defer c.mtx.RUnlock()
 	if !checkExpired {
 		return len(c.items)
 	}
