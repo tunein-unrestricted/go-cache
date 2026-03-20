@@ -1,4 +1,4 @@
-module github.com/tunein/go-cache
+module github.com/tunein-unrestricted/go-cache
 
 go 1.24
 
