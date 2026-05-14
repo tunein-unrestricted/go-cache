@@ -22,7 +22,7 @@ jobs:
       - name: Build
         run: go build -v ./...
       - name: Test with the Go CLI
-        run: go test -race
+        run: go test -race -v ./...
 
   golangci-lint:
     name: lint

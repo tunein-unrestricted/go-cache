@@ -253,22 +253,20 @@ func (s *CacheSuite) TestHasConcurrentRace() {
 // non-LRU get() path: a Set between the RUnlock and the write-lock used to
 // delete the key could silently destroy a freshly written valid entry.
 func (s *CacheSuite) TestGetTOCTOU() {
-	var (
-		validate = s.Assert()
-		cc       = New[int, int](50 * time.Millisecond)
-		wg       sync.WaitGroup
-	)
+	require := s.Require()
+	cc := New[int, int](50 * time.Millisecond)
 
 	cc.Set(1, 42)
 	time.Sleep(60 * time.Millisecond) // let the entry expire
 
-	// Concurrently: one goroutine triggers the expired-delete path via Get,
-	// another immediately writes a fresh value for the same key.
+	var (
+		wg     sync.WaitGroup
+		getErr error
+	)
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, err := cc.Get(1)
-		s.NoError(err)
+		_, getErr = cc.Get(1) // ErrNotFound or nil depending on scheduling — both valid
 	}()
 	go func() {
 		defer wg.Done()
@@ -276,13 +274,14 @@ func (s *CacheSuite) TestGetTOCTOU() {
 	}()
 	wg.Wait()
 
-	// At this point the key must be present with value 99 (the fresh write),
-	// OR absent (if the fresh write happened before the expiry check). What must
-	// never happen is Get returning 42 (stale) or 99 being silently deleted.
+	// The Get either arrived before Set (saw expired entry → ErrNotFound)
+	// or after Set (saw fresh entry → nil). Any other error is a bug.
+	require.True(getErr == nil || getErr == ErrNotFound,
+		"Get must return nil or ErrNotFound, got: %v", getErr)
+
 	v, err := cc.Get(1)
-	if err == nil {
-		validate.Equal(99, v, "if key is present after concurrent Set+expired-Get, value must be the fresh one")
-	}
+	require.NoError(err, "fresh value must not be silently deleted by a concurrent expired-Get")
+	require.Equal(99, v)
 }
 
 // TestStartCleaner verifies that the background cleaner removes expired items
