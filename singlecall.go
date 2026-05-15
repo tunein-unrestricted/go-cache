@@ -34,8 +34,7 @@ type Group[TKey comparable, TValue any] struct {
 // sure that only one execution is in-flight for a given key at a
 // time. If a duplicate comes in, the duplicate caller waits for the
 // original to complete and receives the same results.
-func (g *Group[TKey, TValue]) Do(key TKey, fn func() (TValue, error), isWait bool) (res TValue, dupl bool, err error) {
-	var def TValue
+func (g *Group[TKey, TValue]) Do(key TKey, fn func() (TValue, error)) (res TValue, dupl bool, err error) {
 	g.mtx.Lock()
 	v, err := g.c.get(key)
 	if err == nil {
@@ -47,9 +46,6 @@ func (g *Group[TKey, TValue]) Do(key TKey, fn func() (TValue, error), isWait boo
 	}
 	if c, ok := g.m[key]; ok {
 		g.mtx.Unlock()
-		if !isWait {
-			return def, false, ErrNotFound
-		}
 		c.wg.Wait()
 		return c.val, false, c.err
 	}
@@ -57,10 +53,6 @@ func (g *Group[TKey, TValue]) Do(key TKey, fn func() (TValue, error), isWait boo
 	c.wg.Add(1)
 	g.m[key] = c
 	g.mtx.Unlock()
-	if !isWait {
-		go func() { _, _ = g.call(c, key, fn) }()
-		return def, false, ErrNotFound
-	}
 	v, err = g.call(c, key, fn)
 	return v, true, err
 }

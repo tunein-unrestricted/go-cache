@@ -21,6 +21,7 @@ type Cache[TKey comparable, TValue any] struct {
 	umtx             sync.RWMutex
 	items            map[TKey]cacheItem[TValue]
 	ttl              time.Duration
+	cleanedAt        time.Time // last time expired entries were swept; guarded by mtx
 	addedFunc        AddedFunc[TKey, TValue]
 	loaderExpireFunc LoaderExpireFunc[TKey, TValue]
 	loadGroup        Group[TKey, TValue]
@@ -36,8 +37,11 @@ func New[TKey comparable, TValue any](exp time.Duration) *Cache[TKey, TValue] {
 // Set a new key-value pair
 func (c *Cache[TKey, TValue]) Set(key TKey, value TValue) {
 	c.umtx.RLock()
-	defer c.umtx.RUnlock()
 	c.set(key, value, 0)
+	c.umtx.RUnlock()
+	if c.addedFunc != nil {
+		c.addedFunc(key, value)
+	}
 }
 
 // SetWithExpire a new key-value pair with an expiration time. 0 = never expire
@@ -45,9 +49,14 @@ func (c *Cache[TKey, TValue]) SetWithExpire(key TKey, value TValue, expiration t
 	if expiration < 0 {
 		expiration = c.ttl
 	}
-	c.umtx.RLock()
-	defer c.umtx.RUnlock()
-	c.set(key, value, expiration)
+	func() {
+		c.umtx.RLock()
+		defer c.umtx.RUnlock()
+		c.set(key, value, expiration)
+	}()
+	if c.addedFunc != nil {
+		c.addedFunc(key, value)
+	}
 }
 
 // Update atomically updates a value using the given function to calculate the new value
@@ -61,10 +70,17 @@ func (c *Cache[TKey, TValue]) UpdateWithExpire(key TKey, calc func(v TValue) TVa
 	if expiration < 0 {
 		expiration = c.ttl
 	}
-	c.umtx.Lock()
-	defer c.umtx.Unlock()
-	v, _ := c.get(key)
-	c.set(key, calc(v), expiration)
+	var newVal TValue
+	func() {
+		c.umtx.Lock()
+		defer c.umtx.Unlock()
+		v, _ := c.get(key)
+		newVal = calc(v)
+		c.set(key, newVal, expiration)
+	}()
+	if c.addedFunc != nil {
+		c.addedFunc(key, newVal)
+	}
 }
 
 // Get a value from cache pool using key if it exists.
@@ -73,14 +89,16 @@ func (c *Cache[TKey, TValue]) UpdateWithExpire(key TKey, calc func(v TValue) TVa
 func (c *Cache[TKey, TValue]) Get(key TKey) (TValue, error) {
 	v, err := c.get(key)
 	if err == ErrNotFound {
-		return c.getWithLoader(key, true)
+		return c.getWithLoader(key)
 	}
 	return v, err
 }
 
 // Has checks if key exists in cache
 func (c *Cache[TKey, TValue]) Has(key TKey) bool {
+	c.mtx.RLock()
 	item, ok := c.items[key]
+	c.mtx.RUnlock()
 	if !ok {
 		return false
 	}
@@ -134,25 +152,43 @@ func (c *Cache[TKey, TValue]) init(exp time.Duration) {
 }
 
 func (c *Cache[TKey, TValue]) set(key TKey, value TValue, ttl time.Duration) {
-	c.mtx.RLock()
-	item, ok := c.items[key]
-	c.mtx.RUnlock()
 	if ttl < 1 {
 		ttl = c.ttl
 	}
-	if !ok {
-		item = cacheItem[TValue]{}
+	item := cacheItem[TValue]{
+		ttl:   ttl,
+		val:   value,
+		added: time.Now(),
 	}
 
-	item.ttl = ttl
-	item.val = value
-	item.added = time.Now()
+	var runCleanup bool
 	c.mtx.Lock()
 	c.items[key] = item
+
+	// Trigger a sweep when: a default TTL is set (>= 1ms to exclude sub-ms
+	// test values) and a full TTL period has elapsed since the last sweep.
+	// cleanedAt is updated inside the lock so that concurrent Set calls
+	// cannot each spawn their own cleanup goroutine.
+	if c.ttl >= time.Millisecond && time.Since(c.cleanedAt) >= c.ttl {
+		c.cleanedAt = time.Now()
+		runCleanup = true
+	}
 	c.mtx.Unlock()
 
-	if c.addedFunc != nil {
-		c.addedFunc(key, value)
+	if runCleanup {
+		go c.deleteExpired()
+	}
+}
+
+// deleteExpired removes all expired entries from the cache.
+// It is called in a background goroutine triggered by set.
+func (c *Cache[TKey, TValue]) deleteExpired() {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	for k, v := range c.items {
+		if v.expired() {
+			delete(c.items, k)
+		}
 	}
 }
 
@@ -166,12 +202,10 @@ func (c *Cache[TKey, TValue]) initItems() {
 }
 
 // load a new value using by specified key.
-func (c *Cache[TKey, TValue]) load(key TKey, cb func(TValue,
-	*time.Duration, error) (TValue, error), isWait bool,
-) (val TValue, isLoaded bool, err error) {
+func (c *Cache[TKey, TValue]) load(key TKey, cb func(TValue, *time.Duration, error) (TValue, error)) (val TValue, isLoaded bool, err error) {
 	v, called, err := c.loadGroup.Do(key, func() (v TValue, e error) {
 		return cb(c.loaderExpireFunc(key))
-	}, isWait)
+	})
 	if err != nil {
 		var def TValue
 		return def, called, err
@@ -187,15 +221,20 @@ func (c *Cache[TKey, TValue]) get(key TKey) (TValue, error) {
 		if !item.expired() {
 			return item.val, nil
 		}
+		// Re-read under write lock before deleting: a concurrent Set may have
+		// stored a fresh value between our RUnlock and Lock, so we must not
+		// delete unless the entry is still expired.
 		c.mtx.Lock()
-		delete(c.items, key)
+		if current, exists := c.items[key]; exists && current.expired() {
+			delete(c.items, key)
+		}
 		c.mtx.Unlock()
 	}
 	var def TValue
 	return def, ErrNotFound
 }
 
-func (c *Cache[TKey, TValue]) getWithLoader(key TKey, isWait bool) (TValue, error) {
+func (c *Cache[TKey, TValue]) getWithLoader(key TKey) (TValue, error) {
 	var def TValue
 	if c.loaderExpireFunc == nil {
 		return def, ErrNotFound
@@ -209,8 +248,11 @@ func (c *Cache[TKey, TValue]) getWithLoader(key TKey, isWait bool) (TValue, erro
 			ttl = *expiration
 		}
 		c.set(key, v, ttl)
+		if c.addedFunc != nil {
+			c.addedFunc(key, v)
+		}
 		return v, nil
-	}, isWait)
+	})
 	if err != nil {
 		return def, err
 	}
