@@ -36,9 +36,7 @@ func New[TKey comparable, TValue any](exp time.Duration) *Cache[TKey, TValue] {
 
 // Set a new key-value pair
 func (c *Cache[TKey, TValue]) Set(key TKey, value TValue) {
-	c.umtx.RLock()
-	c.set(key, value, 0)
-	c.umtx.RUnlock()
+	c.setWithUpdateMutex(key, value, 0)
 	if c.addedFunc != nil {
 		c.addedFunc(key, value)
 	}
@@ -49,11 +47,7 @@ func (c *Cache[TKey, TValue]) SetWithExpire(key TKey, value TValue, expiration t
 	if expiration < 0 {
 		expiration = c.ttl
 	}
-	func() {
-		c.umtx.RLock()
-		defer c.umtx.RUnlock()
-		c.set(key, value, expiration)
-	}()
+	c.setWithUpdateMutex(key, value, expiration)
 	if c.addedFunc != nil {
 		c.addedFunc(key, value)
 	}
@@ -234,6 +228,12 @@ func (c *Cache[TKey, TValue]) get(key TKey) (TValue, error) {
 	return def, ErrNotFound
 }
 
+func (c *Cache[TKey, TValue]) setWithUpdateMutex(key TKey, value TValue, ttl time.Duration) {
+	c.umtx.RLock()
+	defer c.umtx.RUnlock()
+	c.set(key, value, ttl)
+}
+
 func (c *Cache[TKey, TValue]) getWithLoader(key TKey) (TValue, error) {
 	var def TValue
 	if c.loaderExpireFunc == nil {
@@ -247,7 +247,7 @@ func (c *Cache[TKey, TValue]) getWithLoader(key TKey) (TValue, error) {
 		if expiration != nil {
 			ttl = *expiration
 		}
-		c.set(key, v, ttl)
+		c.setWithUpdateMutex(key, v, ttl)
 		if c.addedFunc != nil {
 			c.addedFunc(key, v)
 		}
