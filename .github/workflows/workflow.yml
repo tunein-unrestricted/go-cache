@@ -22,7 +22,7 @@ jobs:
       - name: Build
         run: go build -v ./...
       - name: Test with the Go CLI
-        run: go test -race
+        run: go test -race -v ./...
 
   golangci-lint:
     name: lint
@@ -35,7 +35,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.4
+          version: v2.11
           args: --timeout=1m -v
           problem-matchers: true
 
@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
-          severity: 'MEDIUM,HIGH,CRITICAL'
+          severity: 'HIGH,CRITICAL'

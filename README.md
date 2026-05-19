@@ -164,6 +164,14 @@ cache.UpdateWithExpire("counter", func(current int) int {
 }, 10*time.Minute)
 ```
 
+### Expired Items Handling
+
+Expired items are automatically removed from the cache in the following cases:
+
+- on each `Set` call if enough time has passed since the last cleanup - all expired items are removed from the cache
+- on each `Get` call if the item is expired
+- on every new item loaded from the loader function if enough time has passed since the last cleanup
+
 ### Event Hooks
 
 Monitor cache events with callback functions:
