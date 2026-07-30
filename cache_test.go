@@ -10,11 +10,14 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const testKey = "test"
+
 type CacheSuite struct {
 	suite.Suite
 }
 
 func TestCacheSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, &CacheSuite{})
 }
 
@@ -28,7 +31,7 @@ func (s *CacheSuite) TestGet() {
 	}{
 		{
 			title: "Success",
-			key:   "test",
+			key:   testKey,
 			val:   0.555,
 			exp:   1 * time.Second,
 		},
@@ -65,10 +68,10 @@ func (s *CacheSuite) TestGetWithLoader() {
 	}{
 		{
 			title: "Get value with loader func",
-			key:   "test",
+			key:   testKey,
 			exp:   1 * time.Second,
 			loader: func(s string) (float32, error) {
-				if s == "test" {
+				if s == testKey {
 					return 111.89, nil
 				}
 				return 0, ErrNotFound
@@ -388,7 +391,7 @@ func (s *CacheSuite) TestConcurrentUpdate() {
 	)
 
 	cc.Set(k1, 1)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			cc.Update(k1, calc)
 		}()

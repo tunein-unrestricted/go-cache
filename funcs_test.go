@@ -18,6 +18,7 @@ type CacheFuncsSuite struct {
 }
 
 func TestCacheFuncsSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, &CacheFuncsSuite{})
 }
 

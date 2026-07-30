@@ -1,6 +1,6 @@
 version: "2"
 run:
-  go: '1.24'
+  go: '1.26'
 linters:
   settings:
     revive:
@@ -11,7 +11,7 @@ linters:
     dupl:
       threshold: 100
     staticcheck:
-      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022"]
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020"]
     funlen:
       lines: 100
       statements: 50
@@ -45,35 +45,91 @@ linters:
       require-specific: true # don't require nolint directives to be specific about which linter is being skipped
   default: "none"
   enable:
+    - arangolint
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - cyclop
+    - decorder
     - dogsled
     - dupl
+    - dupword
+    - durationcheck
+    - embeddedstructfieldcheck
     - errcheck
+    - errchkjson
+    - errname
+    - errorlint
     - exhaustive
-    - copyloopvar
-    - gocyclo
+    - exptostd
+    - fatcontext
+    - funcorder
     - funlen
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gochecksumtype
+    - gocognit
     - goconst
     - gocritic
-    - goprintffuncname
+    - gocyclo
+    - goheader
+    - gomoddirectives
+    - gomodguard_v2
     - gosec
-    - govet
-    - ineffassign
-    - lll
     - gosmopolitan
-    - misspell
-    - nakedret
-    - revive
-    - unconvert
-    - unused
-    - whitespace
-    - bodyclose
-    - noctx
-    - unparam
+    - govet
+    - grouper
     - iface
+    - importas
+    - inamedparam
+    - ineffassign
+    - interfacebloat
+    - intrange
+    - iotamixing
+    - lll
+    - loggercheck
+    - maintidx
+    - makezero
+    - mirror
+    - modernize
+    - musttag
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnesserr
+    - noctx
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - recvcheck
+    - revive
+    - rowserrcheck
+    - spancheck
     - sqlclosecheck
-    - wastedassign
-    - errchkjson
     - staticcheck
+    - tagalign
+    - testableexamples
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - zerologlint
 formatters:
   settings:
     goimports:

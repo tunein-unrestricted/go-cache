@@ -16,6 +16,7 @@ type CacheItemSuite struct {
 }
 
 func TestCacheItemSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, &CacheItemSuite{})
 }
 

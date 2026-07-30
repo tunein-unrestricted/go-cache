@@ -82,7 +82,7 @@ func (c *Cache[TKey, TValue]) UpdateWithExpire(key TKey, calc func(v TValue) TVa
 // generate a value using `LoaderFunc` method returns value.
 func (c *Cache[TKey, TValue]) Get(key TKey) (TValue, error) {
 	v, err := c.get(key)
-	if err == ErrNotFound {
+	if errors.Is(err, ErrNotFound) {
 		return c.getWithLoader(key)
 	}
 	return v, err
