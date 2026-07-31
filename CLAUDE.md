@@ -15,7 +15,7 @@ Guidance for working in this repo. Keep it short; update it when the architectur
 go build ./...
 go test -race ./...          # -race is mandatory; CI runs it and this code is concurrency-heavy
 go test -cover ./...
-golangci-lint run            # config in .golangci.yml; CI pins golangci-lint v2.11 (Go 1.24 mode)
+golangci-lint run            # config in .golangci.yml;
 go vet ./...
 ```
 
@@ -56,7 +56,6 @@ When changing anything here, add/adjust a test that fails under `-race` without 
 - Every `.go` file starts with the TuneIn copyright + Apache-2.0 header block. Copy it into new files.
 - **Keep every file ≤ 500 lines.** Split by logical unit before it grows past that.
 - All code (production and test) must comply with the existing [.golangci.yml](.golangci.yml) config — see limits below.
-- Go 1.25 toolchain (`go.mod`), but golangci-lint runs in Go 1.24 compatibility mode.
 - Lint config is strict (see [.golangci.yml](.golangci.yml)): funlen ≤100 lines/50 statements, gocyclo ≤20, `lll` 175 cols, gofumpt + goimports with `github.com/tunein/go-cache` as the local prefix. Prefer fixing over `//nolint` — `nolintlint` rejects unused directives and requires specific linter names.
 - Keep the public surface in sync with the `Cacher` interface; note it also lists the unexported `get`, so the interface is package-internal-aware by design.
 - Update [CHANGELOG.md](CHANGELOG.md) for user-visible changes.

@@ -1,8 +1,8 @@
 # go-cache
 
-[![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/tunein/go-cache)](https://goreportcard.com/report/github.com/tunein/go-cache)
+[![Go Report Card](https://goreportcard.com/badge/github.com/tunein-unrestricted/go-cache)](https://goreportcard.com/report/github.com/tunein-unrestricted/go-cache)
 
 A high-performance, goroutine-safe, generic in-memory cache implementation for Go with automatic expiration, lazy loading, and duplicate function call suppression.
 
@@ -357,5 +357,5 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes.
 
 ## Dependencies
 
-- Go 1.24+
+- Go 1.26+
 - [testify](https://github.com/stretchr/testify) (for testing only)
