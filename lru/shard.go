@@ -15,6 +15,13 @@ type shard[K comparable, V any] struct {
 	root  entry[K, V]
 }
 
+type entry[K comparable, V any] struct {
+	key   K
+	value V
+	prev  *entry[K, V]
+	next  *entry[K, V]
+}
+
 func newShard[K comparable, V any](size int) *shard[K, V] {
 	sh := &shard[K, V]{
 		size:  size,

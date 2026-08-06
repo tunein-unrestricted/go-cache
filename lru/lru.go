@@ -29,13 +29,6 @@ var ErrInvalidSize = errors.New("lru: cache size must be positive")
 // outside the range [1, 1024].
 var ErrInvalidShardCount = errors.New("lru: shard count must be between 1 and 1024")
 
-type entry[K comparable, V any] struct {
-	key   K
-	value V
-	prev  *entry[K, V]
-	next  *entry[K, V]
-}
-
 type kv[K comparable, V any] struct {
 	key K
 	val V
