@@ -4,7 +4,10 @@ Guidance for working in this repo. Keep it short; update it when the architectur
 
 ## What this is
 
-`github.com/tunein/go-cache` — a goroutine-safe, generic, in-memory cache with TTL expiration, lazy loading, and duplicate-call suppression. Single package (`package cache`), no subpackages, zero non-test dependencies (testify is test-only). Public API lives behind the `Cacher[TKey, TValue]` interface in [interface.go](interface.go).
+`github.com/tunein/go-cache` — goroutine-safe, generic in-memory caches with zero non-test dependencies (testify is test-only). Two packages:
+
+- root `package cache` — TTL-expiring cache with lazy loading and duplicate-call suppression; public API behind the `Cacher[TKey, TValue]` interface in [interface.go](interface.go).
+- [lru/](lru/) `package lru` — fixed-capacity LRU cache with an optional `MetricsCollector`. Sharded (default 64 shards, `WithShards` 1–1024), one mutex per shard, `maphash.Comparable` for shard selection. Each shard is an intrusive doubly-linked list (no `container/list`, no `interface{}` boxing) with evicted-node reuse. Recency and eviction are per-shard, so there is no global LRU order (no `GetOldest`/`RemoveOldest`). Shard type lives in [lru/shard.go](lru/shard.go); orchestration/metrics in [lru/lru.go](lru/lru.go).
 
 ## Commands
 
@@ -12,7 +15,7 @@ Guidance for working in this repo. Keep it short; update it when the architectur
 go build ./...
 go test -race ./...          # -race is mandatory; CI runs it and this code is concurrency-heavy
 go test -cover ./...
-golangci-lint run            # config in .golangci.yml; CI pins golangci-lint v2.11 (Go 1.24 mode)
+golangci-lint run            # config in .golangci.yml;
 go vet ./...
 ```
 
@@ -53,7 +56,26 @@ When changing anything here, add/adjust a test that fails under `-race` without 
 - Every `.go` file starts with the TuneIn copyright + Apache-2.0 header block. Copy it into new files.
 - **Keep every file ≤ 500 lines.** Split by logical unit before it grows past that.
 - All code (production and test) must comply with the existing [.golangci.yml](.golangci.yml) config — see limits below.
-- Go 1.25 toolchain (`go.mod`), but golangci-lint runs in Go 1.24 compatibility mode.
 - Lint config is strict (see [.golangci.yml](.golangci.yml)): funlen ≤100 lines/50 statements, gocyclo ≤20, `lll` 175 cols, gofumpt + goimports with `github.com/tunein/go-cache` as the local prefix. Prefer fixing over `//nolint` — `nolintlint` rejects unused directives and requires specific linter names.
 - Keep the public surface in sync with the `Cacher` interface; note it also lists the unexported `get`, so the interface is package-internal-aware by design.
 - Update [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
+
+## Commit messages
+
+Follow the Go project convention (https://go.dev/wiki/CommitMessage):
+
+- First line: `package: short summary`, where `package` is the affected package/path (`lru:`, `cache:`, or the dir for non-Go changes). Keep it under ~76 chars, lowercase after the colon, no trailing period, phrased as a command ("add", "fix", not "added"/"fixes").
+- Then a blank line, then a body in complete sentences explaining **what** changed and **why** (not how). Wrap at ~76 columns.
+- Reference issues in a trailer, e.g. `Fixes #12` or `Updates #12`, after another blank line.
+
+```
+lru: shard entries under a per-shard mutex
+
+Split the cache into independently locked shards so concurrent
+operations on different keys no longer contend on a single mutex.
+Shard selection uses maphash.Comparable; recency is now per shard.
+
+Fixes #14
+```
+
+Preserve the existing `Co-Authored-By` trailer when present.

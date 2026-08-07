@@ -1,10 +1,15 @@
 # go-cache
 
-[![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/tunein/go-cache)](https://goreportcard.com/report/github.com/tunein/go-cache)
+[![Coverage](https://img.shields.io/badge/Coverage-94%25-brightgreen.svg)](#testing)
 
 A high-performance, goroutine-safe, generic in-memory cache implementation for Go with automatic expiration, lazy loading, and duplicate function call suppression.
+
+The module ships two packages:
+
+- `cache` (root) — a TTL-expiring cache with lazy loading and duplicate-call suppression.
+- [`lru`](#lru-cache) — a fast, fixed-capacity, sharded LRU cache with optional metrics collection.
 
 ## Features
 
@@ -15,6 +20,7 @@ A high-performance, goroutine-safe, generic in-memory cache implementation for G
 - 🚫 **Duplicate Call Suppression**: Prevents multiple simultaneous calls for the same key
 - 📊 **Statistics & Monitoring**: Built-in hooks for cache events
 - 🎯 **LRU-like Behavior**: Efficient memory management
+- 🧩 **Sharded LRU**: A dedicated fixed-capacity `lru` package with per-shard locking and pluggable metrics
 
 ## Installation
 
@@ -241,6 +247,95 @@ cache.SetWithExpire("short-lived", "data", 30*time.Second)
 cache.SetWithExpire("fallback", "data", -1)
 ```
 
+## LRU Cache
+
+The `lru` package provides a separate, fixed-capacity Least Recently Used cache. It is a good fit when you want a hard bound on the number of entries (rather than TTL-based expiration) and maximum throughput under concurrent access.
+
+Highlights:
+
+- **Sharded** — entries are spread across independently locked shards (default 64, configurable 1–1024), so operations on different keys rarely contend on the same lock.
+- **Per-shard `RWMutex`** — read-only calls (`Peek`, `Contains`, `Keys`, `Values`) take a read lock.
+- **Allocation-friendly** — each shard is an intrusive doubly-linked list (no `container/list`, no `interface{}` boxing) that reuses the evicted node when inserting into a full shard.
+- **Pluggable metrics** — an optional `MetricsCollector` receives get/set latency, hit/miss counts, evictions and the live item count.
+
+> **Note:** recency and eviction are tracked **per shard**, so there is no global LRU ordering across the whole cache. A key may be evicted from its shard while globally colder keys survive in other shards. Use a single shard (`WithShards(1)`) if you need strict global LRU semantics.
+
+### Installation
+
+```bash
+go get github.com/tunein/go-cache/lru
+```
+
+### Quick Start
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "github.com/tunein/go-cache/lru"
+)
+
+func main() {
+    // Fixed-capacity cache holding at most 1000 entries.
+    c, err := lru.New[string, int](1000)
+    if err != nil {
+        panic(err)
+    }
+
+    evicted := c.Add("answer", 42) // reports whether an entry was evicted
+    _ = evicted
+
+    if v, ok := c.Get("answer"); ok {
+        fmt.Printf("value: %d\n", v)
+    }
+
+    fmt.Printf("len=%d cap=%d shards=%d\n", c.Len(), c.Cap(), c.Shards())
+}
+```
+
+### Options
+
+```go
+c, err := lru.New[string, User](10_000,
+    // Override the shard count (default 64, valid range 1–1024).
+    lru.WithShards[string, User](128),
+
+    // Receive metrics for this cache instance.
+    lru.WithMetrics[string, User](collector),
+
+    // Called for every entry removed by eviction, Remove, Resize or Purge.
+    // Runs without any internal lock held, so it may call back into the cache.
+    lru.WithEvictionCallback[string, User](func(key string, value User) {
+        log.Printf("evicted %s", key)
+    }),
+)
+```
+
+### Metrics
+
+Implement `lru.MetricsCollector` to export operational metrics (e.g. to Prometheus). All methods must be safe for concurrent use and are invoked without the cache's internal lock held:
+
+```go
+type MetricsCollector interface {
+    ObserveGetLatency(d time.Duration)
+    ObserveSetLatency(d time.Duration)
+    RecordHit()
+    RecordMiss()
+    RecordEviction()
+    SetItemCount(n int)
+}
+```
+
+> **Note:** pass the collector as a non-nil value. A nil pointer of a concrete collector type is a **non-nil** interface value, so the cache would call methods on the nil receiver instead of disabling metrics.
+
+### API
+
+`Add`, `Get`, `Peek`, `Contains`, `Remove`, `Keys`, `Values`, `Len`, `Cap`, `Shards`, `Resize` and `Purge`.
+
+`Resize` redistributes the new capacity across the existing shards. Every shard keeps a capacity of at least one entry, so the effective total capacity never drops below the shard count — `Cap` reports the capacity actually applied.
+
 ## Performance Considerations
 
 - **Memory Usage**: The cache stores all items in memory, so monitor memory consumption
@@ -262,5 +357,5 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes.
 
 ## Dependencies
 
-- Go 1.24+
+- Go 1.26+
 - [testify](https://github.com/stretchr/testify) (for testing only)

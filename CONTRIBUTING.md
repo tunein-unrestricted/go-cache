@@ -33,7 +33,7 @@ go-cache is a goroutine-safe generic flexible implementation of in-memory cache 
 
 ### Prerequisites
 
-- Go 1.24 or later
+- Go 1.26 or later
 - Git
 
 ### Fork and Clone
