@@ -35,10 +35,9 @@ type kv[K comparable, V any] struct {
 }
 
 type addOutcome[K comparable, V any] struct {
-	evicted   bool
-	evictKey  K
-	evictVal  V
-	sizeDelta int
+	evicted  bool
+	evictKey K
+	evictVal V
 }
 
 // Cache is a fixed-capacity, goroutine-safe LRU cache. Its entries are spread
@@ -120,7 +119,7 @@ func New[K comparable, V any](size int, opts ...Option[K, V]) (*Cache[K, V], err
 	var capacity int
 	for i := range c.shards {
 		shardSize := shardCapacity(size, n, i)
-		c.shards[i] = newShard[K, V](shardSize)
+		c.shards[i] = newShard[K, V](shardSize, &c.total)
 		capacity += shardSize
 	}
 	c.capacity.Store(int64(capacity))
@@ -141,9 +140,6 @@ func (c *Cache[K, V]) Add(key K, value V) (evicted bool) {
 	var elapsed time.Duration
 	if c.metrics != nil {
 		elapsed = time.Since(start)
-	}
-	if res.sizeDelta != 0 {
-		c.total.Add(int64(res.sizeDelta))
 	}
 
 	if res.evicted && c.onEvict != nil {
@@ -195,7 +191,6 @@ func (c *Cache[K, V]) Remove(key K) (present bool) {
 	if !present {
 		return false
 	}
-	c.total.Add(-1)
 
 	if c.onEvict != nil {
 		c.onEvict(key, value)
@@ -261,9 +256,6 @@ func (c *Cache[K, V]) Resize(size int) (evicted int) {
 	}
 	c.capacity.Store(int64(capacity))
 	evicted = len(removed)
-	if evicted > 0 {
-		c.total.Add(-int64(evicted))
-	}
 	c.structMu.Unlock()
 
 	if c.onEvict != nil {
@@ -286,14 +278,11 @@ func (c *Cache[K, V]) Purge() {
 
 	c.structMu.Lock()
 	var removed []kv[K, V]
-	var purged int64
-	for _, sh := range c.shards {
-		entries, n := sh.purge(collect)
-		removed = append(removed, entries...)
-		purged += int64(n)
+	if collect {
+		removed = make([]kv[K, V], 0, c.total.Load())
 	}
-	if purged > 0 {
-		c.total.Add(-purged)
+	for _, sh := range c.shards {
+		removed = append(removed, sh.purge(collect)...)
 	}
 	c.structMu.Unlock()
 
