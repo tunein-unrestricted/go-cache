@@ -4,6 +4,7 @@
 package cache
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -443,6 +444,49 @@ func (s *CacheSuite) TestLoaderPanic() {
 			case <-time.After(time.Second):
 				s.Fail("Get blocked after the loader panicked")
 			}
+		})
+	}
+}
+
+func (s *CacheSuite) TestPurgeDuringLoads() {
+	testCases := []struct {
+		title   string
+		getters int
+		keys    int
+		purges  int
+	}{
+		{title: "ConcurrentGetWithLoaderAndPurge", getters: 8, keys: 200, purges: 200},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			cc := New[int, int](time.Minute)
+			cc.LoaderFunc(func(k int) (int, error) {
+				return k * 2, nil
+			})
+
+			var wg sync.WaitGroup
+			for g := range tc.getters {
+				wg.Go(func() {
+					for k := range tc.keys {
+						key := g*tc.keys + k
+						v, err := cc.Get(key)
+						validate.NoError(err)
+						validate.Equal(key*2, v)
+					}
+				})
+			}
+			wg.Go(func() {
+				for range tc.purges {
+					cc.Purge()
+				}
+			})
+			wg.Wait()
+
+			v, err := cc.Get(1)
+			validate.NoError(err)
+			validate.Equal(2, v)
 		})
 	}
 }
