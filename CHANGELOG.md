@@ -6,11 +6,16 @@ This changelog keeps track of changes made in Go Cache library.
 
 - [Changelog](#changelog)
   - [History](#history)
+    - [v1.0.1](#v101)
     - [v1.0.0](#v100)
     - [v0.9.2](#v092)
     - [v0.9.1](#v091)
     - [v0.9.0](#v090)
     - [v0.5.0](#v050)
+
+### v1.0.1
+
+ - Fixed a goroutine leak when a loader panics: later `Get` calls for that key no longer block forever, and callers waiting on the panicking load receive an error
 
 ### v1.0.0
 

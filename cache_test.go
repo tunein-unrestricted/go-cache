@@ -4,6 +4,7 @@
 package cache
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -400,4 +401,48 @@ func (s *CacheSuite) TestConcurrentUpdate() {
 	res, err := cc.Get(k1)
 	validate.NoError(err)
 	validate.Equal(1001, res)
+}
+
+func (s *CacheSuite) TestLoaderPanic() {
+	testCases := []struct {
+		title string
+		key   int
+		want  int
+	}{
+		{title: "NextGetCallsLoaderAgainAfterPanic", key: 7, want: 70},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			require := s.Require()
+			var calls atomic.Int32
+			cc := New[int, int](time.Minute)
+			cc.LoaderFunc(func(k int) (int, error) {
+				if calls.Add(1) == 1 {
+					panic("loader failure")
+				}
+				return k * 10, nil
+			})
+
+			require.Panics(func() { _, _ = cc.Get(tc.key) })
+
+			type result struct {
+				val int
+				err error
+			}
+			done := make(chan result, 1)
+			go func() {
+				v, err := cc.Get(tc.key)
+				done <- result{val: v, err: err}
+			}()
+
+			select {
+			case r := <-done:
+				require.NoError(r.err)
+				require.Equal(tc.want, r.val)
+			case <-time.After(time.Second):
+				s.Fail("Get blocked after the loader panicked")
+			}
+		})
+	}
 }

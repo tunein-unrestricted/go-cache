@@ -12,6 +12,7 @@ package cache
 // https://github.com/bluele/gcache/blob/master/singleflight.go
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -58,12 +59,21 @@ func (g *Group[TKey, TValue]) Do(key TKey, fn func() (TValue, error)) (res TValu
 }
 
 func (g *Group[TKey, TValue]) call(c *call[TValue], key TKey, fn func() (TValue, error)) (TValue, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.err = fmt.Errorf("cache: loader panicked: %v", r)
+			g.finish(c, key)
+			panic(r)
+		}
+	}()
 	c.val, c.err = fn()
-	c.wg.Done()
+	g.finish(c, key)
+	return c.val, c.err
+}
 
+func (g *Group[TKey, TValue]) finish(c *call[TValue], key TKey) {
 	g.mtx.Lock()
 	delete(g.m, key)
 	g.mtx.Unlock()
-
-	return c.val, c.err
+	c.wg.Done()
 }
