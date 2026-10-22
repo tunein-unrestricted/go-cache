@@ -4,6 +4,7 @@
 package cache
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -104,25 +105,27 @@ func (s *CacheSuite) TestGetWithLoader() {
 
 // TestKeys ensures correct KEYS array returned
 func (s *CacheSuite) TestKeys() {
-	var (
-		validate = s.Assert()
-		keys     = []int{1, 10, 100, 1000, 10000}
-		cc       = New[int, bool](1 * time.Nanosecond)
-	)
-
-	for _, k := range keys {
-		cc.Set(k, true)
+	testCases := []struct {
+		title string
+		keys  []int
+		ttl   time.Duration
+	}{
+		{title: "ExpiredKeysListedOnlyWithoutExpiryCheck", keys: []int{1, 10, 100, 1000, 10000}, ttl: 20 * time.Millisecond},
 	}
 
-	res := cc.Keys(false)
-	validate.Equal(len(keys), len(res))
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			cc := New[int, bool](tc.ttl)
+			for _, k := range tc.keys {
+				cc.Set(k, true)
+			}
+			time.Sleep(tc.ttl + 10*time.Millisecond)
 
-	for _, k := range keys {
-		validate.Contains(res, k)
+			validate.ElementsMatch(tc.keys, cc.Keys(false))
+			validate.Empty(cc.Keys(true))
+		})
 	}
-
-	res = cc.Keys(true)
-	validate.Equal(0, len(res))
 }
 
 // TestSetWithExpire ensures cacheItems created with passed expiration
@@ -145,21 +148,27 @@ func (s *CacheSuite) TestSetWithExpire() {
 
 // TestLen ensures correct cache length is returned
 func (s *CacheSuite) TestLen() {
-	var (
-		validate = s.Assert()
-		keys     = []int{1, 10, 100, 1000, 10000}
-		cc       = New[int, bool](1 * time.Nanosecond)
-	)
-
-	for _, k := range keys {
-		cc.Set(k, true)
+	testCases := []struct {
+		title string
+		keys  []int
+		ttl   time.Duration
+	}{
+		{title: "ExpiredKeysCountedOnlyWithoutExpiryCheck", keys: []int{1, 10, 100, 1000, 10000}, ttl: 20 * time.Millisecond},
 	}
 
-	res := cc.Len(false)
-	validate.Equal(len(keys), res)
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			cc := New[int, bool](tc.ttl)
+			for _, k := range tc.keys {
+				cc.Set(k, true)
+			}
+			time.Sleep(tc.ttl + 10*time.Millisecond)
 
-	res = cc.Len(true)
-	validate.Equal(0, res)
+			validate.Equal(len(tc.keys), cc.Len(false))
+			validate.Equal(0, cc.Len(true))
+		})
+	}
 }
 
 // TestHas ensures that cache has saved value
@@ -198,20 +207,26 @@ func (s *CacheSuite) TestRemove() {
 
 // TestPurge ensures correct cache cleaning
 func (s *CacheSuite) TestPurge() {
-	var (
-		validate = s.Assert()
-		keys     = []int{1, 10, 100, 1000, 10000}
-		cc       = New[int, bool](1 * time.Nanosecond)
-	)
-
-	for _, k := range keys {
-		cc.Set(k, true)
+	testCases := []struct {
+		title string
+		keys  []int
+	}{
+		{title: "RemovesAllItems", keys: []int{1, 10, 100, 1000, 10000}},
 	}
 
-	validate.Equal(len(keys), cc.Len(false))
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			cc := New[int, bool](time.Minute)
+			for _, k := range tc.keys {
+				cc.Set(k, true)
+			}
+			validate.Equal(len(tc.keys), cc.Len(false))
 
-	cc.Purge()
-	validate.Empty(cc.Len(false))
+			cc.Purge()
+			validate.Empty(cc.Len(false))
+		})
+	}
 }
 
 func (s *CacheSuite) TestSet() {
@@ -266,28 +281,67 @@ func (s *CacheSuite) TestCleanupOnSet() {
 	require.Equal(99, v)
 }
 
-// TestCleanupOnSetRateLimit verifies that the sweep is rate-limited to once per
-// TTL period: expired entries written between two sweeps accumulate until the
-// next sweep window opens.
+// TestCleanupOnSetRateLimit verifies that sweeps run at most once per sweep
+// interval: an entry that expires right after a sweep stays until the next one.
 func (s *CacheSuite) TestCleanupOnSetRateLimit() {
-	const ttl = 200 * time.Millisecond
-	require := s.Require()
-	cc := New[int, int](ttl)
+	testCases := []struct {
+		title      string
+		defaultTTL time.Duration
+		itemTTL    time.Duration
+	}{
+		{title: "ExpiredItemWaitsForNextSweepInterval", defaultTTL: 300 * time.Millisecond, itemTTL: 10 * time.Millisecond},
+	}
 
-	// First Set triggers an immediate sweep (cleanedAt is zero).
-	cc.Set(1, 1)
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			require := s.Require()
+			cc := New[int, int](tc.defaultTTL)
+			swept := func(key int) func() bool {
+				return func() bool { return !slices.Contains(cc.Keys(false), key) }
+			}
 
-	// These items expire after ttl, but the sweep window has just been reset,
-	// so no cleanup runs for the next <ttl interval.
-	time.Sleep(ttl + 10*time.Millisecond) // items are now expired
-	cc.Set(2, 2)                          // sweep fires: cleans up key 1, writes key 2
-	time.Sleep(10 * time.Millisecond)     // wait for the background goroutine to finish
-	require.Equal(1, cc.Len(false), "second sweep must remove the expired entry")
+			cc.SetWithExpire(1, 1, tc.itemTTL)
+			time.Sleep(2 * tc.itemTTL)
+			cc.SetWithExpire(2, 2, time.Hour)
+			require.Eventually(swept(1), time.Second, time.Millisecond)
 
-	// Key 2 must still be alive and readable.
-	v, err := cc.Get(2)
-	require.NoError(err)
-	require.Equal(2, v)
+			cc.SetWithExpire(3, 3, tc.itemTTL)
+			time.Sleep(2 * tc.itemTTL)
+			cc.SetWithExpire(4, 4, time.Hour)
+			time.Sleep(2 * tc.itemTTL)
+			require.Contains(cc.Keys(false), 3)
+
+			time.Sleep(tc.defaultTTL)
+			cc.SetWithExpire(5, 5, time.Hour)
+			require.Eventually(swept(3), time.Second, time.Millisecond)
+		})
+	}
+}
+
+func (s *CacheSuite) TestSweepRemovesPerItemExpired() {
+	testCases := []struct {
+		title      string
+		defaultTTL time.Duration
+		itemTTL    time.Duration
+		items      int
+	}{
+		{title: "NoDefaultTTL", defaultTTL: 0, itemTTL: 20 * time.Millisecond, items: 100},
+		{title: "DefaultTTLLongerThanItemTTL", defaultTTL: time.Hour, itemTTL: 20 * time.Millisecond, items: 100},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			require := s.Require()
+			cc := New[int, int](tc.defaultTTL)
+			for i := range tc.items {
+				cc.SetWithExpire(i, i, tc.itemTTL)
+			}
+			time.Sleep(tc.itemTTL + 10*time.Millisecond)
+
+			cc.SetWithExpire(tc.items, tc.items, time.Hour)
+			require.Eventually(func() bool { return cc.Len(false) == 1 }, time.Second, 5*time.Millisecond)
+		})
+	}
 }
 
 // TestAddedFuncCanCallSet verifies that an addedFunc registered on the cache
