@@ -1,6 +1,6 @@
 module github.com/tunein/go-cache
 
-go 1.26
+go 1.27
 
 require github.com/stretchr/testify v1.11.1
 

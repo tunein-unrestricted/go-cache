@@ -143,6 +143,9 @@ func (c *Cache[TKey, TValue]) Purge() {
 func (c *Cache[TKey, TValue]) init(exp time.Duration) {
 	c.initItems()
 	c.ttl = exp
+	c.loadGroup = Group[TKey, TValue]{
+		c: c,
+	}
 }
 
 func (c *Cache[TKey, TValue]) set(key TKey, value TValue, ttl time.Duration) {
@@ -190,9 +193,6 @@ func (c *Cache[TKey, TValue]) initItems() {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	c.items = make(map[TKey]cacheItem[TValue])
-	c.loadGroup = Group[TKey, TValue]{
-		c: c,
-	}
 }
 
 // load a new value using by specified key.

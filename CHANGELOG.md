@@ -6,11 +6,17 @@ This changelog keeps track of changes made in Go Cache library.
 
 - [Changelog](#changelog)
   - [History](#history)
+    - [v1.0.1](#v101)
     - [v1.0.0](#v100)
     - [v0.9.2](#v092)
     - [v0.9.1](#v091)
     - [v0.9.0](#v090)
     - [v0.5.0](#v050)
+
+### v1.0.1
+
+ - Fixed a data race between `Purge` and in-flight loader calls: `Purge` no longer replaces the duplicate-call suppression group, which could corrupt its mutex and run the loader twice for the same key
+ - Updated minimum Go version to 1.27
 
 ### v1.0.0
 
