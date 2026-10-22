@@ -29,7 +29,7 @@ func (c *Cache[TKey, TValue]) LoaderFunc(loaderFunc LoaderFunc[TKey, TValue]) *C
 }
 
 // LoaderExpireFunc - loader function with expiration, create a new value with this function if cached value is expired.
-// If nil returned instead of time.Duration from loaderExpireFunc than value will never expire.
+// A nil or negative duration returned from loaderExpireFunc applies the default expiration time, 0 means the value never expires.
 func (c *Cache[TKey, TValue]) LoaderExpireFunc(loaderExpireFunc LoaderExpireFunc[TKey, TValue]) *Cache[TKey, TValue] {
 	c.loaderExpireFunc = loaderExpireFunc
 	return c
