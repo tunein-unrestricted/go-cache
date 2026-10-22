@@ -6,13 +6,17 @@
 // license that can be found in the LICENSE file.
 package lru
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 type shard[K comparable, V any] struct {
 	mu    sync.RWMutex
 	size  int
 	items map[K]*entry[K, V]
 	root  entry[K, V]
+	total *atomic.Int64
 }
 
 type entry[K comparable, V any] struct {
@@ -22,10 +26,11 @@ type entry[K comparable, V any] struct {
 	next  *entry[K, V]
 }
 
-func newShard[K comparable, V any](size int) *shard[K, V] {
+func newShard[K comparable, V any](size int, total *atomic.Int64) *shard[K, V] {
 	sh := &shard[K, V]{
 		size:  size,
 		items: make(map[K]*entry[K, V], size),
+		total: total,
 	}
 	sh.root.prev = &sh.root
 	sh.root.next = &sh.root
@@ -57,7 +62,7 @@ func (sh *shard[K, V]) add(key K, value V) (res addOutcome[K, V]) {
 	ent := &entry[K, V]{key: key, value: value}
 	sh.pushFront(ent)
 	sh.items[key] = ent
-	res.sizeDelta = 1
+	sh.total.Add(1)
 	return res
 }
 
@@ -96,6 +101,7 @@ func (sh *shard[K, V]) remove(key K) (value V, ok bool) {
 		sh.unlink(ent)
 		delete(sh.items, key)
 		value = ent.value
+		sh.total.Add(-1)
 	}
 	sh.mu.Unlock()
 	return value, ok
@@ -127,13 +133,14 @@ func (sh *shard[K, V]) resize(newSize int) []kv[K, V] {
 		delete(sh.items, oldest.key)
 		removed = append(removed, kv[K, V]{key: oldest.key, val: oldest.value})
 	}
+	sh.total.Add(-int64(len(removed)))
 	sh.mu.Unlock()
 	return removed
 }
 
-func (sh *shard[K, V]) purge(collect bool) (removed []kv[K, V], n int) {
+func (sh *shard[K, V]) purge(collect bool) (removed []kv[K, V]) {
 	sh.mu.Lock()
-	n = len(sh.items)
+	n := len(sh.items)
 	if collect {
 		removed = make([]kv[K, V], 0, n)
 		for e := sh.root.prev; e != &sh.root; e = e.prev {
@@ -143,8 +150,9 @@ func (sh *shard[K, V]) purge(collect bool) (removed []kv[K, V], n int) {
 	sh.items = make(map[K]*entry[K, V], sh.size)
 	sh.root.prev = &sh.root
 	sh.root.next = &sh.root
+	sh.total.Add(-int64(n))
 	sh.mu.Unlock()
-	return removed, n
+	return removed
 }
 
 func (sh *shard[K, V]) pushFront(e *entry[K, V]) {

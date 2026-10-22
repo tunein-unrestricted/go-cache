@@ -16,6 +16,7 @@ This changelog keeps track of changes made in Go Cache library.
 ### v1.0.1
 
  - Fixed a goroutine leak when a loader panics: later `Get` calls for that key no longer block forever, and callers waiting on the panicking load receive an error
+ - Fixed `lru`: `Len` could briefly report a negative count, and `Keys`/`Values` could panic, when `Add` and `Remove` of the same key ran on different goroutines
 
 ### v1.0.0
 
