@@ -6,7 +6,7 @@ This changelog keeps track of changes made in Go Cache library.
 
 - [Changelog](#changelog)
   - [History](#history)
-    - [v1.0.2](#v102)
+    - [v1.1.0](#v110)
     - [v1.0.1](#v101)
     - [v1.0.0](#v100)
     - [v0.9.2](#v092)
@@ -14,9 +14,9 @@ This changelog keeps track of changes made in Go Cache library.
     - [v0.9.0](#v090)
     - [v0.5.0](#v050)
 
-### v1.0.2
+### v1.1.0
 
- - Fixed "never expire": `SetWithExpire` and `UpdateWithExpire` with a zero expiration, and a loader returning a pointer to a zero duration, now store values that never expire, as documented; previously they fell back to the default TTL
+ - **Behavior change.** Fixed "never expire": `SetWithExpire` and `UpdateWithExpire` with a zero expiration, and a loader returning a pointer to a zero duration, now store values that never expire, as documented; previously they fell back to the default TTL
  - A loader returning a `nil` or negative duration applies the default TTL (the docs previously said `nil` meant never expire, which never worked)
 
 ### v1.0.1
