@@ -15,6 +15,7 @@ This changelog keeps track of changes made in Go Cache library.
 
 ### v1.0.1
 
+ - Fixed a goroutine leak when a loader panics: later `Get` calls for that key no longer block forever, and callers waiting on the panicking load receive an error
  - Fixed a data race between `Purge` and in-flight loader calls: `Purge` no longer replaces the duplicate-call suppression group, which could corrupt its mutex and run the loader twice for the same key
  - Updated minimum Go version to 1.27
  - Fixed `lru`: `Len` could briefly report a negative count, and `Keys`/`Values` could panic, when `Add` and `Remove` of the same key ran on different goroutines
