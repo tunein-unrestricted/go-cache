@@ -6,12 +6,18 @@ This changelog keeps track of changes made in Go Cache library.
 
 - [Changelog](#changelog)
   - [History](#history)
+    - [v1.0.2](#v102)
     - [v1.0.1](#v101)
     - [v1.0.0](#v100)
     - [v0.9.2](#v092)
     - [v0.9.1](#v091)
     - [v0.9.0](#v090)
     - [v0.5.0](#v050)
+
+### v1.0.2
+
+ - Fixed expired entries staying in memory: the sweep now starts once the earliest item expiry has passed, instead of only when a default TTL of at least 1ms is set, so caches without a default TTL, or with per-item TTLs shorter than the default, are swept too. Sweeps run at most once per default TTL, or once per second when the default is longer or not set
+ - Documented that the `cache` package has no size limit; it never evicts by least-recent use
 
 ### v1.0.1
 
