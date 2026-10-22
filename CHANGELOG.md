@@ -6,11 +6,16 @@ This changelog keeps track of changes made in Go Cache library.
 
 - [Changelog](#changelog)
   - [History](#history)
+    - [v1.0.1](#v101)
     - [v1.0.0](#v100)
     - [v0.9.2](#v092)
     - [v0.9.1](#v091)
     - [v0.9.0](#v090)
     - [v0.5.0](#v050)
+
+### v1.0.1
+
+ - Fixed `lru`: `Len` could briefly report a negative count, and `Keys`/`Values` could panic, when `Add` and `Remove` of the same key ran on different goroutines
 
 ### v1.0.0
 
