@@ -5,6 +5,7 @@ package lru
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -589,6 +590,55 @@ func (s *LRUSuite) TestConcurrentPurge() {
 			}
 		})
 	}
+}
+
+func (s *LRUSuite) TestLenNeverNegative() {
+	testCases := []struct {
+		title    string
+		shards   int
+		keys     int
+		writers  int
+		readings int
+		rounds   int
+	}{
+		{title: "AddAndRemoveOfSameKeysFromDifferentGoroutines", shards: 2, keys: 2, writers: 8, readings: 10_000, rounds: 20},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			for range tc.rounds {
+				validate.GreaterOrEqual(minLenUnderChurn(tc.shards, tc.keys, tc.writers, tc.readings), 0)
+			}
+		})
+	}
+}
+
+func minLenUnderChurn(shards, keys, writers, readings int) int {
+	c := mustNew(1024, WithShards[int, int](shards))
+	var stop atomic.Bool
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	defer stop.Store(true)
+	for range writers {
+		wg.Go(func() {
+			for i := 0; !stop.Load(); i++ {
+				c.Add(i%keys, i)
+			}
+		})
+		wg.Go(func() {
+			for i := 0; !stop.Load(); i++ {
+				c.Remove(i % keys)
+			}
+		})
+	}
+
+	minLen := 0
+	for range readings {
+		minLen = min(minLen, c.Len())
+		_ = c.Keys()
+	}
+	return minLen
 }
 
 func (s *LRUSuite) TestEvictionCallbackReentrancy() {
