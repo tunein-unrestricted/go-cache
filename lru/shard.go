@@ -13,6 +13,7 @@ import (
 
 type shard[K comparable, V any] struct {
 	mu    sync.RWMutex
+	count atomic.Int64
 	size  int
 	items map[K]*entry[K, V]
 	root  entry[K, V]
@@ -35,6 +36,13 @@ func newShard[K comparable, V any](size int, total *atomic.Int64) *shard[K, V] {
 	sh.root.prev = &sh.root
 	sh.root.next = &sh.root
 	return sh
+}
+
+func (sh *shard[K, V]) addCount(delta int64) {
+	sh.count.Add(delta)
+	if sh.total != nil {
+		sh.total.Add(delta)
+	}
 }
 
 func (sh *shard[K, V]) add(key K, value V) (res addOutcome[K, V]) {
@@ -62,7 +70,7 @@ func (sh *shard[K, V]) add(key K, value V) (res addOutcome[K, V]) {
 	ent := &entry[K, V]{key: key, value: value}
 	sh.pushFront(ent)
 	sh.items[key] = ent
-	sh.total.Add(1)
+	sh.addCount(1)
 	return res
 }
 
@@ -101,7 +109,7 @@ func (sh *shard[K, V]) remove(key K) (value V, ok bool) {
 		sh.unlink(ent)
 		delete(sh.items, key)
 		value = ent.value
-		sh.total.Add(-1)
+		sh.addCount(-1)
 	}
 	sh.mu.Unlock()
 	return value, ok
@@ -133,7 +141,7 @@ func (sh *shard[K, V]) resize(newSize int) []kv[K, V] {
 		delete(sh.items, oldest.key)
 		removed = append(removed, kv[K, V]{key: oldest.key, val: oldest.value})
 	}
-	sh.total.Add(-int64(len(removed)))
+	sh.addCount(-int64(len(removed)))
 	sh.mu.Unlock()
 	return removed
 }
@@ -150,7 +158,7 @@ func (sh *shard[K, V]) purge(collect bool) (removed []kv[K, V]) {
 	sh.items = make(map[K]*entry[K, V], sh.size)
 	sh.root.prev = &sh.root
 	sh.root.next = &sh.root
-	sh.total.Add(-int64(n))
+	sh.addCount(-int64(n))
 	sh.mu.Unlock()
 	return removed
 }

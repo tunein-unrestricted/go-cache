@@ -6,12 +6,17 @@ This changelog keeps track of changes made in Go Cache library.
 
 - [Changelog](#changelog)
   - [History](#history)
+    - [v1.0.2](#v102)
     - [v1.0.1](#v101)
     - [v1.0.0](#v100)
     - [v0.9.2](#v092)
     - [v0.9.1](#v091)
     - [v0.9.0](#v090)
     - [v0.5.0](#v050)
+
+### v1.0.2
+
+ - `lru`: each shard now counts its own entries, so concurrent writes no longer contend on one shared counter (parallel Add+Remove is about 2.9x faster with 8 goroutines). With a `MetricsCollector` set, the shared counter is kept so `SetItemCount` and `Len` stay O(1); without one, `Len` sums the shard counts
 
 ### v1.0.1
 

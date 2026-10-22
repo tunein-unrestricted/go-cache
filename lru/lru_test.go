@@ -641,6 +641,43 @@ func minLenUnderChurn(shards, keys, writers, readings int) int {
 	return minLen
 }
 
+func (s *LRUSuite) TestLenMatchesContents() {
+	testCases := []struct {
+		title   string
+		metrics bool
+	}{
+		{title: "WithoutMetrics", metrics: false},
+		{title: "WithMetrics", metrics: true},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			opts := []Option[int, int]{WithShards[int, int](4)}
+			if tc.metrics {
+				opts = append(opts, WithMetrics[int, int](&fakeMetrics{}))
+			}
+			c := mustNew(16, opts...)
+			steps := []func(){
+				func() {
+					for i := range 40 {
+						c.Add(i, i)
+					}
+				},
+				func() { c.Add(39, 0) },
+				func() { c.Remove(39) },
+				func() { c.Remove(1000) },
+				func() { c.Resize(8) },
+				func() { c.Purge() },
+			}
+			for _, step := range steps {
+				step()
+				validate.Equal(len(c.Keys()), c.Len())
+			}
+		})
+	}
+}
+
 func (s *LRUSuite) TestEvictionCallbackReentrancy() {
 	testCases := []struct {
 		title     string
