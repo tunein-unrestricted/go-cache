@@ -1,6 +1,6 @@
 # go-cache
 
-[![Go Version](https://img.shields.io/badge/Go-1.26+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.27+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Coverage](https://img.shields.io/badge/Coverage-94%25-brightgreen.svg)](#testing)
 
@@ -357,5 +357,5 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes.
 
 ## Dependencies
 
-- Go 1.26+
+- Go 1.27+
 - [testify](https://github.com/stretchr/testify) (for testing only)
