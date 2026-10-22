@@ -6,12 +6,17 @@ This changelog keeps track of changes made in Go Cache library.
 
 - [Changelog](#changelog)
   - [History](#history)
+    - [v1.0.2](#v102)
     - [v1.0.1](#v101)
     - [v1.0.0](#v100)
     - [v0.9.2](#v092)
     - [v0.9.1](#v091)
     - [v0.9.0](#v090)
     - [v0.5.0](#v050)
+
+### v1.0.2
+
+ - `lru`: the default shard count now depends on the cache size (a power of two up to `DefaultShards`, with at least 256 entries per shard) instead of always being 64. Small and mid-size caches no longer evict while far from full: a 128-entry cache now keeps all 128 distinct keys instead of about 72%, and a 1,024-entry cache keeps about 98% instead of 89%. `WithShards` still overrides the default
 
 ### v1.0.1
 
