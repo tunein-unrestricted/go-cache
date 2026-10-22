@@ -12,7 +12,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const testKey = "test"
+const (
+	testKey    = "test"
+	testKeyInt = 1
+)
 
 type CacheSuite struct {
 	suite.Suite
@@ -35,7 +38,7 @@ func (s *CacheSuite) TestGet() {
 			title: "Success",
 			key:   testKey,
 			val:   0.555,
-			exp:   1 * time.Second,
+			exp:   100 * time.Millisecond,
 		},
 	}
 
@@ -51,7 +54,7 @@ func (s *CacheSuite) TestGet() {
 			validate.NoError(err)
 			validate.Equal(tc.val, val)
 
-			time.Sleep(tc.exp)
+			time.Sleep(tc.exp + 20*time.Millisecond)
 			val2, err := cc.Get(tc.key)
 			validate.Error(err)
 			validate.Empty(val2)
@@ -127,20 +130,31 @@ func (s *CacheSuite) TestKeys() {
 
 // TestSetWithExpire ensures cacheItems created with passed expiration
 func (s *CacheSuite) TestSetWithExpire() {
-	var (
-		validate = s.Assert()
-		cc       = New[int, bool](1 * time.Nanosecond)
-	)
+	testCases := []struct {
+		title      string
+		defaultTTL time.Duration
+		itemTTL    time.Duration
+	}{
+		{title: "ItemTTLLongerThanDefault", defaultTTL: time.Nanosecond, itemTTL: 100 * time.Millisecond},
+		{title: "ItemTTLShorterThanDefault", defaultTTL: time.Hour, itemTTL: 100 * time.Millisecond},
+	}
 
-	cc.SetWithExpire(1, true, 1*time.Second)
-	val, err := cc.Get(1)
-	validate.NoError(err)
-	validate.True(val)
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			cc := New[int, bool](tc.defaultTTL)
 
-	time.Sleep(1 * time.Second)
-	val, err = cc.Get(1)
-	validate.Error(err)
-	validate.False(val)
+			cc.SetWithExpire(1, true, tc.itemTTL)
+			val, err := cc.Get(1)
+			validate.NoError(err)
+			validate.True(val)
+
+			time.Sleep(tc.itemTTL + 20*time.Millisecond)
+			val, err = cc.Get(1)
+			validate.Error(err)
+			validate.False(val)
+		})
+	}
 }
 
 // TestLen ensures correct cache length is returned
@@ -164,36 +178,53 @@ func (s *CacheSuite) TestLen() {
 
 // TestHas ensures that cache has saved value
 func (s *CacheSuite) TestHas() {
-	var (
-		validate = s.Assert()
-		key      = 280
-		cc       = New[int, bool](500 * time.Millisecond)
-	)
+	testCases := []struct {
+		title      string
+		key        int
+		missingKey int
+		ttl        time.Duration
+	}{
+		{title: "PresentUntilExpired", key: 280, missingKey: 2, ttl: 100 * time.Millisecond},
+	}
 
-	cc.Set(key, true)
-	validate.True(cc.Has(key))
-	validate.False(cc.Has(2))
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			cc := New[int, bool](tc.ttl)
 
-	// wait until the cached item is expired
-	time.Sleep(500 * time.Millisecond)
-	validate.False(cc.Has(key))
+			cc.Set(tc.key, true)
+			validate.True(cc.Has(tc.key))
+			validate.False(cc.Has(tc.missingKey))
+
+			time.Sleep(tc.ttl + 20*time.Millisecond)
+			validate.False(cc.Has(tc.key))
+		})
+	}
 }
 
 // TestRemove ensures item is removed from the cache
 func (s *CacheSuite) TestRemove() {
-	var (
-		validate = s.Assert()
-		key      = 280
-		cc       = New[int, bool](2000 * time.Millisecond)
-	)
+	testCases := []struct {
+		title string
+		key   int
+	}{
+		{title: "RemovesPresentKey", key: 280},
+	}
 
-	cc.Set(key, true)
-	validate.True(cc.Has(key))
-	validate.Equal(1, cc.Len(false))
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			cc := New[int, bool](time.Minute)
 
-	cc.Remove(key)
-	validate.False(cc.Has(key))
-	validate.Equal(0, cc.Len(false))
+			cc.Set(tc.key, true)
+			validate.True(cc.Has(tc.key))
+			validate.Equal(1, cc.Len(false))
+
+			cc.Remove(tc.key)
+			validate.False(cc.Has(tc.key))
+			validate.Equal(0, cc.Len(false))
+		})
+	}
 }
 
 // TestPurge ensures correct cache cleaning
@@ -215,27 +246,56 @@ func (s *CacheSuite) TestPurge() {
 }
 
 func (s *CacheSuite) TestSet() {
-	cc := New[string, int](time.Second)
+	testCases := []struct {
+		title  string
+		writes []int
+		want   int
+	}{
+		{title: "SingleWrite", writes: []int{10}, want: 10},
+		{title: "OverwriteKeepsLastValue", writes: []int{10, 20}, want: 20},
+	}
 
-	cc.Set("a", 10)
-	v, _ := cc.Get("a")
-	s.Require().Equal(10, v)
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			require := s.Require()
+			cc := New[string, int](time.Minute)
+			for _, w := range tc.writes {
+				cc.Set(testKey, w)
+			}
 
-	cc.Set("a", 20)
-	v, _ = cc.Get("a")
-	s.Require().Equal(20, v)
+			v, err := cc.Get(testKey)
+			require.NoError(err)
+			require.Equal(tc.want, v)
+		})
+	}
 }
 
 func (s *CacheSuite) TestCalcSet() {
-	cc := New[string, int](time.Second)
+	testCases := []struct {
+		title string
+		seed  *int
+		calc  func(v int) int
+		want  int
+	}{
+		{title: "UpdatesExistingValue", seed: new(5), calc: func(v int) int { return v * v }, want: 25},
+		{title: "MissingKeyStartsFromZeroValue", seed: nil, calc: func(v int) int { return v + 7 }, want: 7},
+	}
 
-	cc.Set("a", 5)
-	cc.Update("a", func(v int) int {
-		return v * v
-	})
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			require := s.Require()
+			cc := New[string, int](time.Minute)
+			if tc.seed != nil {
+				cc.Set(testKey, *tc.seed)
+			}
 
-	v, _ := cc.Get("a")
-	s.Require().Equal(25, v)
+			cc.Update(testKey, tc.calc)
+
+			v, err := cc.Get(testKey)
+			require.NoError(err)
+			require.Equal(tc.want, v)
+		})
+	}
 }
 
 // TestCleanupOnSet verifies that Set removes all expired entries once per TTL
@@ -290,118 +350,114 @@ func (s *CacheSuite) TestCleanupOnSetRateLimit() {
 	require.Equal(2, v)
 }
 
-// TestAddedFuncCanCallSet verifies that an addedFunc registered on the cache
-// may safely call Set on the same cache without deadlocking.  Previously,
-// addedFunc was invoked while the caller still held umtx (RLock from Set /
-// Lock from Update), so any re-entrant Set/Update inside the callback would
-// self-deadlock.
-func (s *CacheSuite) TestAddedFuncCanCallSet() {
-	require := s.Require()
-
-	cc := New[int, int](time.Second)
-	done := make(chan struct{})
-
-	cc.AddedFunc(func(key, _ int) {
-		if key == 1 {
-			// Calling Set from within an addedFunc must not deadlock.
-			cc.Set(2, 200)
-			close(done)
-		}
-	})
-
-	cc.Set(1, 100)
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		s.Fail("deadlock: addedFunc calling Set never completed")
+func (s *CacheSuite) TestAddedFuncReentrancy() {
+	increment := func(v int) int { return v + 1 }
+	testCases := []struct {
+		title   string
+		seed    func(cc *Cache[int, int])
+		reenter func(cc *Cache[int, int], key, val int) bool
+		trigger func(cc *Cache[int, int])
+		want    int
+	}{
+		{
+			title: "SetCallbackCallsSet",
+			seed:  func(*Cache[int, int]) {},
+			reenter: func(cc *Cache[int, int], key, _ int) bool {
+				if key != 1 {
+					return false
+				}
+				cc.Set(2, 200)
+				return true
+			},
+			trigger: func(cc *Cache[int, int]) { cc.Set(1, 100) },
+			want:    200,
+		},
+		{
+			title: "SetCallbackCallsUpdate",
+			seed:  func(cc *Cache[int, int]) { cc.Set(2, 10) },
+			reenter: func(cc *Cache[int, int], key, _ int) bool {
+				if key != 1 {
+					return false
+				}
+				cc.Update(2, increment)
+				return true
+			},
+			trigger: func(cc *Cache[int, int]) { cc.Set(1, 100) },
+			want:    11,
+		},
+		{
+			title: "UpdateCallbackCallsSet",
+			seed:  func(cc *Cache[int, int]) { cc.Set(1, 0) },
+			reenter: func(cc *Cache[int, int], key, val int) bool {
+				if key != 1 || val == 0 {
+					return false
+				}
+				cc.Set(2, 999)
+				return true
+			},
+			trigger: func(cc *Cache[int, int]) { cc.Update(1, increment) },
+			want:    999,
+		},
 	}
 
-	v, err := cc.Get(2)
-	require.NoError(err)
-	require.Equal(200, v)
-}
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			require := s.Require()
+			cc := New[int, int](time.Minute)
+			tc.seed(cc)
 
-// TestAddedFuncCanCallUpdateFromSet verifies that an addedFunc triggered by Set
-// can call Update without deadlocking (previously deadlocked because Set held
-// umtx.RLock and Update tries umtx.Lock).
-func (s *CacheSuite) TestAddedFuncCanCallUpdateFromSet() {
-	require := s.Require()
+			done := make(chan struct{})
+			var once sync.Once
+			cc.AddedFunc(func(key, val int) {
+				if tc.reenter(cc, key, val) {
+					once.Do(func() { close(done) })
+				}
+			})
+			go tc.trigger(cc)
 
-	cc := New[int, int](time.Second)
-	cc.Set(2, 10) // seed value for Update to read
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				require.Fail("deadlock: re-entrant call from addedFunc never completed")
+			}
 
-	done := make(chan struct{})
-	cc.AddedFunc(func(key, _ int) {
-		if key == 1 {
-			cc.Update(2, func(v int) int { return v + 1 })
-			close(done)
-		}
-	})
-
-	cc.Set(1, 100)
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		s.Fail("deadlock: addedFunc calling Update never completed")
+			v, err := cc.Get(2)
+			require.NoError(err)
+			require.Equal(tc.want, v)
+		})
 	}
-
-	v, err := cc.Get(2)
-	require.NoError(err)
-	require.Equal(11, v)
-}
-
-// TestAddedFuncCanCallSetFromUpdate verifies that an addedFunc triggered by
-// Update can call Set without deadlocking (previously deadlocked because Update
-// held umtx.Lock and Set tries umtx.RLock).
-func (s *CacheSuite) TestAddedFuncCanCallSetFromUpdate() {
-	require := s.Require()
-
-	cc := New[int, int](time.Second)
-	cc.Set(1, 0)
-
-	done := make(chan struct{})
-	cc.AddedFunc(func(key, val int) {
-		if key == 1 && val > 0 {
-			cc.Set(2, 999)
-			close(done)
-		}
-	})
-
-	cc.Update(1, func(v int) int { return v + 1 })
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		s.Fail("deadlock: addedFunc calling Set from Update never completed")
-	}
-
-	v, err := cc.Get(2)
-	require.NoError(err)
-	require.Equal(999, v)
 }
 
 func (s *CacheSuite) TestConcurrentUpdate() {
-	var (
-		validate = s.Assert()
-		cc       = New[int, int](1000 * time.Millisecond)
-		calc     = func(in int) int {
-			return in + 100
-		}
-		k1 = 1
-	)
-
-	cc.Set(k1, 1)
-	for range 10 {
-		go func() {
-			cc.Update(k1, calc)
-		}()
+	testCases := []struct {
+		title    string
+		initial  int
+		step     int
+		updaters int
+		want     int
+	}{
+		{title: "EveryUpdateApplied", initial: 1, step: 100, updaters: 10, want: 1001},
 	}
-	time.Sleep(20 * time.Millisecond)
-	res, err := cc.Get(k1)
-	validate.NoError(err)
-	validate.Equal(1001, res)
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			cc := New[int, int](time.Minute)
+			cc.Set(testKeyInt, tc.initial)
+
+			var wg sync.WaitGroup
+			for range tc.updaters {
+				wg.Go(func() {
+					cc.Update(testKeyInt, func(v int) int { return v + tc.step })
+				})
+			}
+			wg.Wait()
+
+			res, err := cc.Get(testKeyInt)
+			validate.NoError(err)
+			validate.Equal(tc.want, res)
+		})
+	}
 }
 
 func (s *CacheSuite) TestLoaderPanic() {
