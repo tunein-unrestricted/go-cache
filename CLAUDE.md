@@ -7,7 +7,7 @@ Guidance for working in this repo. Keep it short; update it when the architectur
 `github.com/tunein/go-cache` — goroutine-safe, generic in-memory caches with zero non-test dependencies (testify is test-only). Two packages:
 
 - root `package cache` — TTL-expiring cache with lazy loading and duplicate-call suppression; public API behind the `Cacher[TKey, TValue]` interface in [interface.go](interface.go).
-- [lru/](lru/) `package lru` — fixed-capacity LRU cache with an optional `MetricsCollector`. Sharded (default 64 shards, `WithShards` 1–1024), one mutex per shard, `maphash.Comparable` for shard selection. Each shard is an intrusive doubly-linked list (no `container/list`, no `interface{}` boxing) with evicted-node reuse. Recency and eviction are per-shard, so there is no global LRU order (no `GetOldest`/`RemoveOldest`). Shard type lives in [lru/shard.go](lru/shard.go); orchestration/metrics in [lru/lru.go](lru/lru.go).
+- [lru/](lru/) `package lru` — fixed-capacity LRU cache with an optional `MetricsCollector`. Sharded (default derived from size: a power of two up to 64 with at least 64 entries per shard; `WithShards` 1–1024), one mutex per shard, `maphash.Comparable` for shard selection. Each shard is an intrusive doubly-linked list (no `container/list`, no `interface{}` boxing) with evicted-node reuse. Recency and eviction are per-shard, so there is no global LRU order (no `GetOldest`/`RemoveOldest`). Shard type lives in [lru/shard.go](lru/shard.go); orchestration/metrics in [lru/lru.go](lru/lru.go).
 
 ## Commands
 
