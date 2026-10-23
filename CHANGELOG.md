@@ -17,6 +17,7 @@ This changelog keeps track of changes made in Go Cache library.
 ### v1.0.2
 
  - `lru`: the default shard count now depends on the cache size (a power of two up to `DefaultShards`, with at least 256 entries per shard) instead of always being 64. Small and mid-size caches no longer evict while far from full: a 128-entry cache now keeps all 128 distinct keys instead of about 72%, and a 1,024-entry cache keeps about 98% instead of 89%. `WithShards` still overrides the default
+ - `lru`: each shard now counts its own entries, so concurrent writes no longer contend on one shared counter (parallel Add+Remove is about 2.9x faster with 8 goroutines). With a `MetricsCollector` set, the shared counter is kept so `SetItemCount` and `Len` stay O(1); without one, `Len` sums the shard counts
 
 ### v1.0.1
 
