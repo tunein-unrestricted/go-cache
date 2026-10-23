@@ -116,10 +116,14 @@ func New[K comparable, V any](size int, opts ...Option[K, V]) (*Cache[K, V], err
 		onEvict: cfg.onEvict,
 		metrics: cfg.metrics,
 	}
+	var total *atomic.Int64
+	if c.metrics != nil {
+		total = &c.total
+	}
 	var capacity int
 	for i := range c.shards {
 		shardSize := shardCapacity(size, n, i)
-		c.shards[i] = newShard[K, V](shardSize, &c.total)
+		c.shards[i] = newShard[K, V](shardSize, total)
 		capacity += shardSize
 	}
 	c.capacity.Store(int64(capacity))
@@ -204,7 +208,7 @@ func (c *Cache[K, V]) Remove(key K) (present bool) {
 // Keys returns every key in the cache. Order is undefined across shards; keys
 // from the same shard appear from least to most recently used.
 func (c *Cache[K, V]) Keys() []K {
-	keys := make([]K, 0, c.total.Load())
+	keys := make([]K, 0, c.Len())
 	for _, sh := range c.shards {
 		sh.appendKeys(&keys)
 	}
@@ -213,7 +217,7 @@ func (c *Cache[K, V]) Keys() []K {
 
 // Values returns every value in the cache. Order matches Keys.
 func (c *Cache[K, V]) Values() []V {
-	values := make([]V, 0, c.total.Load())
+	values := make([]V, 0, c.Len())
 	for _, sh := range c.shards {
 		sh.appendValues(&values)
 	}
@@ -222,7 +226,14 @@ func (c *Cache[K, V]) Values() []V {
 
 // Len returns the number of entries currently in the cache.
 func (c *Cache[K, V]) Len() int {
-	return int(c.total.Load())
+	if c.metrics != nil {
+		return int(c.total.Load())
+	}
+	var n int64
+	for _, sh := range c.shards {
+		n += sh.count.Load()
+	}
+	return int(n)
 }
 
 // Cap returns the maximum number of entries the cache can hold.
@@ -279,7 +290,7 @@ func (c *Cache[K, V]) Purge() {
 	c.structMu.Lock()
 	var removed []kv[K, V]
 	if collect {
-		removed = make([]kv[K, V], 0, c.total.Load())
+		removed = make([]kv[K, V], 0, c.Len())
 	}
 	for _, sh := range c.shards {
 		removed = append(removed, sh.purge(collect)...)
