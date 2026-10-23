@@ -253,7 +253,7 @@ The `lru` package provides a separate, fixed-capacity Least Recently Used cache.
 
 Highlights:
 
-- **Sharded** — entries are spread across independently locked shards (default 64, configurable 1–1024), so operations on different keys rarely contend on the same lock.
+- **Sharded** — entries are spread across independently locked shards, so operations on different keys rarely contend on the same lock. By default the shard count grows with the cache size, as a power of two up to 64, so that each shard holds at least 64 entries: caches below 128 entries use a single shard, and caches of 4,096 entries or more use 64. `WithShards` overrides it (1–1024).
 - **Per-shard `RWMutex`** — read-only calls (`Peek`, `Contains`, `Keys`, `Values`) take a read lock.
 - **Allocation-friendly** — each shard is an intrusive doubly-linked list (no `container/list`, no `interface{}` boxing) that reuses the evicted node when inserting into a full shard.
 - **Pluggable metrics** — an optional `MetricsCollector` receives get/set latency, hit/miss counts, evictions and the live item count.
@@ -299,7 +299,7 @@ func main() {
 
 ```go
 c, err := lru.New[string, User](10_000,
-    // Override the shard count (default 64, valid range 1–1024).
+    // Override the shard count (default depends on size, up to 64; valid range 1–1024).
     lru.WithShards[string, User](128),
 
     // Receive metrics for this cache instance.

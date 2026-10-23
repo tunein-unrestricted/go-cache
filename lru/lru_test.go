@@ -149,6 +149,52 @@ func (s *LRUSuite) TestShardCount() {
 	}
 }
 
+func (s *LRUSuite) TestDefaultShardCount() {
+	testCases := []struct {
+		title      string
+		size       int
+		wantShards int
+	}{
+		{title: "SingleEntry", size: 1, wantShards: 1},
+		{title: "SmallCacheUsesOneShard", size: 100, wantShards: 1},
+		{title: "JustUnderTwoFullShards", size: 127, wantShards: 1},
+		{title: "TwoFullShards", size: 128, wantShards: 2},
+		{title: "MidSize", size: 2048, wantShards: 32},
+		{title: "JustUnderDefaultShards", size: 4095, wantShards: 32},
+		{title: "ReachesDefaultShards", size: 4096, wantShards: DefaultShards},
+		{title: "LargeCacheCappedAtDefaultShards", size: 1 << 20, wantShards: DefaultShards},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			c := mustNew(tc.size)
+			validate.Equal(tc.wantShards, c.Shards())
+			validate.Equal(tc.size, c.Cap())
+		})
+	}
+}
+
+func (s *LRUSuite) TestSmallCacheKeepsAllDistinctKeys() {
+	testCases := []struct {
+		title string
+		size  int
+	}{
+		{title: "SizeBelowTwoShardMinimum", size: 127},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			validate := s.Assert()
+			c := mustNew(tc.size)
+			for i := range tc.size {
+				c.Add(i, i)
+			}
+			validate.Equal(tc.size, c.Len())
+		})
+	}
+}
+
 func (s *LRUSuite) TestShardCountClampedToSize() {
 	testCases := []struct {
 		title      string
