@@ -19,7 +19,6 @@ The module ships two packages:
 - 🔄 **Lazy Loading**: Automatic value loading when cache misses occur
 - 🚫 **Duplicate Call Suppression**: Prevents multiple simultaneous calls for the same key
 - 📊 **Statistics & Monitoring**: Built-in hooks for cache events
-- 🎯 **LRU-like Behavior**: Efficient memory management
 - 🧩 **Sharded LRU**: A dedicated fixed-capacity `lru` package with per-shard locking and pluggable metrics
 
 ## Installation
@@ -176,9 +175,10 @@ cache.UpdateWithExpire("counter", func(current int) int {
 
 Expired items are automatically removed from the cache in the following cases:
 
-- on each `Set` call if enough time has passed since the last cleanup - all expired items are removed from the cache
 - on each `Get` call if the item is expired
-- on every new item loaded from the loader function if enough time has passed since the last cleanup
+- by a background sweep that a `Set` (or a value stored by the loader function) starts once the earliest item expiry has passed. The sweep removes all expired items and runs at most once per default TTL, or once per second when the default TTL is longer than a second or not set. The interval is also stretched to at least 100 times the duration of the previous sweep, so a large cache spends at most about 1% of the time in sweeps (a 1M-item sweep takes about 19 ms, so such a cache sweeps about every 2 seconds)
+
+A cache that receives no writes does not sweep, so its expired items are removed only when they are read.
 
 ### Event Hooks
 
@@ -340,9 +340,9 @@ type MetricsCollector interface {
 
 ## Performance Considerations
 
-- **Memory Usage**: The cache stores all items in memory, so monitor memory consumption
+- **Memory Usage**: The `cache` package has no size limit: items leave only when they expire or are removed with `Remove` or `Purge`. With many distinct keys, monitor memory consumption, or use the fixed-capacity [`lru`](#lru-cache) package
 - **Concurrency**: Uses read-write mutexes for optimal concurrent read performance
-- **Expiration**: Expired items are automatically cleaned up on access (on one hand it doesn't spin up additional goroutines for expiration, on the other hand it's not the best for memory usage so it will ne reconsidered in future)
+- **Expiration**: Expired items are removed when read, and by a sweep goroutine that writes start at most once per sweep interval (see [Expired Items Handling](#expired-items-handling)). The sweep holds the write lock while it scans the whole cache
 - **Loader Functions**: Consider implementing timeouts and error handling in your loader functions
 
 ## Contributing

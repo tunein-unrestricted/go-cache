@@ -1,4 +1,4 @@
-// Package cache provides in-memory lru (discards the least recently used items first) cache functionality
+// Package cache provides an in-memory cache whose items expire by TTL, with lazy loading and duplicate-call suppression. It has no size limit.
 //
 //	Copyright 2025 TuneIn, Inc. All rights reserved.
 //
@@ -15,13 +15,24 @@ import (
 // ErrNotFound returned is nothing has been found by the provided key
 var ErrNotFound = errors.New("item has not been found in the cache")
 
-// Cache provides in-memory lru (discards the least recently used items first) cache functionality
+const (
+	maxSweepInterval = time.Second
+	// sweepCostFactor keeps the time spent sweeping under the write lock at or
+	// below 1/sweepCostFactor of wall time: the interval is at least this many
+	// times the duration of the last sweep.
+	sweepCostFactor = 100
+)
+
+// Cache is an in-memory cache whose items expire by TTL. It has no size limit; use the lru package for a fixed-capacity cache.
 type Cache[TKey comparable, TValue any] struct {
 	mtx              sync.RWMutex
 	umtx             sync.RWMutex
 	items            map[TKey]cacheItem[TValue]
 	ttl              time.Duration
-	cleanedAt        time.Time // last time expired entries were swept; guarded by mtx
+	cleanedAt        time.Time     // last time expired entries were swept; guarded by mtx
+	nextExpiry       time.Time     // earliest known expiry, a lower bound; guarded by mtx
+	sweeping         bool          // a sweep goroutine is running; guarded by mtx
+	sweepCost        time.Duration // duration of the last sweep; guarded by mtx
 	addedFunc        AddedFunc[TKey, TValue]
 	loaderExpireFunc LoaderExpireFunc[TKey, TValue]
 	loadGroup        Group[TKey, TValue]
@@ -152,20 +163,15 @@ func (c *Cache[TKey, TValue]) set(key TKey, value TValue, ttl time.Duration) {
 	item := cacheItem[TValue]{
 		ttl:   ttl,
 		val:   value,
-		added: time.Now(),
+		added: now,
 	}
-
-	var runCleanup bool
-	c.mtx.Lock()
-	c.items[key] = item
-
-	// Trigger a sweep when: a default TTL is set (>= 1ms to exclude sub-ms
-	// test values) and a full TTL period has elapsed since the last sweep.
-	// cleanedAt is updated inside the lock so that concurrent Set calls
-	// cannot each spawn their own cleanup goroutine.
-	if c.ttl >= time.Millisecond && time.Since(c.cleanedAt) >= c.ttl {
-		c.cleanedAt = time.Now()
-		runCleanup = true
+	if ttl > 0 {
+		c.trackExpiry(now.Add(ttl))
+	}
+	runCleanup := c.sweepDue(now)
+	if runCleanup {
+		c.sweeping = true
+		c.cleanedAt = now
 	}
 	c.mtx.Unlock()
 
@@ -174,22 +180,49 @@ func (c *Cache[TKey, TValue]) set(key TKey, value TValue, ttl time.Duration) {
 	}
 }
 
+func (c *Cache[TKey, TValue]) trackExpiry(exp time.Time) {
+	if c.nextExpiry.IsZero() || exp.Before(c.nextExpiry) {
+		c.nextExpiry = exp
+	}
+}
+
+func (c *Cache[TKey, TValue]) sweepDue(now time.Time) bool {
+	return !c.sweeping && !c.nextExpiry.IsZero() && !now.Before(c.nextExpiry) && now.Sub(c.cleanedAt) >= c.sweepInterval()
+}
+
+func (c *Cache[TKey, TValue]) sweepInterval() time.Duration {
+	interval := maxSweepInterval
+	if c.ttl > 0 && c.ttl < maxSweepInterval {
+		interval = c.ttl
+	}
+	return max(interval, sweepCostFactor*c.sweepCost)
+}
+
 // deleteExpired removes all expired entries from the cache.
 // It is called in a background goroutine triggered by set.
 func (c *Cache[TKey, TValue]) deleteExpired() {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
+	start := time.Now()
+	c.nextExpiry = time.Time{}
 	for k, v := range c.items {
 		if v.expired() {
 			delete(c.items, k)
+			continue
+		}
+		if v.ttl > 0 {
+			c.trackExpiry(v.added.Add(v.ttl))
 		}
 	}
+	c.sweepCost = time.Since(start)
+	c.sweeping = false
 }
 
 func (c *Cache[TKey, TValue]) initItems() {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	c.items = make(map[TKey]cacheItem[TValue])
+	c.nextExpiry = time.Time{}
 }
 
 // load a new value using by specified key.

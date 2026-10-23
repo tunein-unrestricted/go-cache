@@ -33,13 +33,13 @@ CI ([.github/workflows/workflow.yml](.github/workflows/workflow.yml)) runs build
 
 This is the part that's easy to break. There are **two** mutexes with distinct jobs:
 
-- `mtx sync.RWMutex` guards the `items` map and `cleanedAt`. Every read/write of `items` must hold it.
+- `mtx sync.RWMutex` guards the `items` map, `cleanedAt`, `nextExpiry`, `sweeping` and `sweepCost`. Every read/write of `items` must hold it.
 - `umtx sync.RWMutex` exists solely to make `Update`/`UpdateWithExpire` atomic (read-modify-write). `Update` takes `umtx.Lock()`; plain sets take `umtx.RLock()` via `setWithUpdateMutex`. Do not merge these two mutexes — `umtx` is a coarser lock layered on top of `mtx`.
 
 Other invariants that already caused bugs (see git history) — preserve them:
 
 - **Expiry-on-read deletes under a re-check.** `get` finds an expired item under `RLock`, then re-reads under `Lock` and only deletes if it's *still* expired — a concurrent `Set` may have refreshed it. Keep that double-check.
-- **Cleanup sweep is triggered from `set`, not a ticker.** When a default TTL `>= 1ms` is set and a full TTL has elapsed since `cleanedAt`, `set` stamps `cleanedAt` inside the lock and spawns one `go deleteExpired()`. Stamping inside the lock is what prevents concurrent `Set`s from each spawning a sweep goroutine — don't move it out.
+- **Cleanup sweep is triggered from `set`, not a ticker, and is driven by item expiry.** `set` keeps `nextExpiry` (earliest known expiry, a lower bound) under `mtx`. Once it has passed, no sweep is running, and a sweep interval has elapsed since `cleanedAt` (`min(default TTL, 1s)`, or 1s without a default, but at least 100x the duration of the last sweep so large caches stall for at most ~1% of the time), `set` sets `sweeping`, stamps `cleanedAt` inside the lock and spawns one `go deleteExpired()`, which recomputes `nextExpiry` and clears `sweeping`. Doing this inside the lock is what prevents concurrent `Set`s from each spawning a sweep goroutine — don't move it out.
 - **Loader calls go through `loadGroup.Do`** so concurrent misses for the same key collapse into one loader invocation; the rest wait and share the result. `Group.Do` currently always runs the loader synchronously — there is intentionally no goroutine-spawning path (a dead `isWait=false` branch was removed to fix a goroutine leak). Don't reintroduce one.
 - Sentinel error is `ErrNotFound` (exported). Compare loader misses against it.
 
