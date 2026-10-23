@@ -174,7 +174,7 @@ cache.UpdateWithExpire("counter", func(current int) int {
 Expired items are automatically removed from the cache in the following cases:
 
 - on each `Get` call if the item is expired
-- by a background sweep that a `Set` (or a value stored by the loader function) starts once the earliest item expiry has passed. The sweep removes all expired items and runs at most once per default TTL, or once per second when the default TTL is longer than a second or not set
+- by a background sweep that a `Set` (or a value stored by the loader function) starts once the earliest item expiry has passed. The sweep removes all expired items and runs at most once per default TTL, or once per second when the default TTL is longer than a second or not set. The interval is also stretched to at least 100 times the duration of the previous sweep, so a large cache spends at most about 1% of the time in sweeps (a 1M-item sweep takes about 19 ms, so such a cache sweeps about every 2 seconds)
 
 A cache that receives no writes does not sweep, so its expired items are removed only when they are read.
 

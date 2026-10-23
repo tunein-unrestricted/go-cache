@@ -15,7 +15,13 @@ import (
 // ErrNotFound returned is nothing has been found by the provided key
 var ErrNotFound = errors.New("item has not been found in the cache")
 
-const maxSweepInterval = time.Second
+const (
+	maxSweepInterval = time.Second
+	// sweepCostFactor keeps the time spent sweeping under the write lock at or
+	// below 1/sweepCostFactor of wall time: the interval is at least this many
+	// times the duration of the last sweep.
+	sweepCostFactor = 100
+)
 
 // Cache is an in-memory cache whose items expire by TTL. It has no size limit; use the lru package for a fixed-capacity cache.
 type Cache[TKey comparable, TValue any] struct {
@@ -23,9 +29,10 @@ type Cache[TKey comparable, TValue any] struct {
 	umtx             sync.RWMutex
 	items            map[TKey]cacheItem[TValue]
 	ttl              time.Duration
-	cleanedAt        time.Time // last time expired entries were swept; guarded by mtx
-	nextExpiry       time.Time
-	sweeping         bool
+	cleanedAt        time.Time     // last time expired entries were swept; guarded by mtx
+	nextExpiry       time.Time     // earliest known expiry, a lower bound; guarded by mtx
+	sweeping         bool          // a sweep goroutine is running; guarded by mtx
+	sweepCost        time.Duration // duration of the last sweep; guarded by mtx
 	addedFunc        AddedFunc[TKey, TValue]
 	loaderExpireFunc LoaderExpireFunc[TKey, TValue]
 	loadGroup        Group[TKey, TValue]
@@ -156,15 +163,14 @@ func (c *Cache[TKey, TValue]) set(key TKey, value TValue, ttl time.Duration) {
 	if ttl < 1 {
 		ttl = c.ttl
 	}
+
+	c.mtx.Lock()
 	now := time.Now()
-	item := cacheItem[TValue]{
+	c.items[key] = cacheItem[TValue]{
 		ttl:   ttl,
 		val:   value,
 		added: now,
 	}
-
-	c.mtx.Lock()
-	c.items[key] = item
 	if ttl > 0 {
 		c.trackExpiry(now.Add(ttl))
 	}
@@ -191,10 +197,11 @@ func (c *Cache[TKey, TValue]) sweepDue(now time.Time) bool {
 }
 
 func (c *Cache[TKey, TValue]) sweepInterval() time.Duration {
+	interval := maxSweepInterval
 	if c.ttl > 0 && c.ttl < maxSweepInterval {
-		return c.ttl
+		interval = c.ttl
 	}
-	return maxSweepInterval
+	return max(interval, sweepCostFactor*c.sweepCost)
 }
 
 // deleteExpired removes all expired entries from the cache.
@@ -202,6 +209,7 @@ func (c *Cache[TKey, TValue]) sweepInterval() time.Duration {
 func (c *Cache[TKey, TValue]) deleteExpired() {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
+	start := time.Now()
 	c.nextExpiry = time.Time{}
 	for k, v := range c.items {
 		if v.expired() {
@@ -212,6 +220,7 @@ func (c *Cache[TKey, TValue]) deleteExpired() {
 			c.trackExpiry(v.added.Add(v.ttl))
 		}
 	}
+	c.sweepCost = time.Since(start)
 	c.sweeping = false
 }
 
