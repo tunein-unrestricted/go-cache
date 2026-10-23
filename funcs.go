@@ -1,4 +1,4 @@
-// Package cache provides in-memory lru (discards the least recently used items first) cache functionality
+// Package cache provides an in-memory cache whose items expire by TTL, with lazy loading and duplicate-call suppression. It has no size limit.
 //
 //	Copyright 2025 TuneIn, Inc. All rights reserved.
 //
