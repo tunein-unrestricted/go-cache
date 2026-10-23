@@ -18,6 +18,7 @@ This changelog keeps track of changes made in Go Cache library.
 
  - Fixed expired entries staying in memory: the sweep now starts once the earliest item expiry has passed, instead of only when a default TTL of at least 1ms is set, so caches without a default TTL, or with per-item TTLs shorter than the default, are swept too. Sweeps run at most once per default TTL, or once per second when the default is longer or not set
  - Documented that the `cache` package has no size limit; it never evicts by least-recent use
+ - `lru`: each shard now counts its own entries, so concurrent writes no longer contend on one shared counter (parallel Add+Remove is about 2.9x faster with 8 goroutines). With a `MetricsCollector` set, the shared counter is kept so `SetItemCount` and `Len` stay O(1); without one, `Len` sums the shard counts
 
 ### v1.0.1
 
