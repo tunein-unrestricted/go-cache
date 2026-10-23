@@ -16,13 +16,13 @@ import (
 
 // DefaultShards is the largest number of shards a Cache uses when WithShards is
 // not set. Smaller caches get fewer shards (a power of two) so that each shard
-// holds at least 256 entries.
+// holds at least 64 entries.
 const DefaultShards = 64
 
 const (
 	minShards          = 1
 	maxShards          = 1024
-	minEntriesPerShard = 256
+	minEntriesPerShard = 64
 )
 
 // ErrInvalidSize is returned by New when the requested capacity is not positive.

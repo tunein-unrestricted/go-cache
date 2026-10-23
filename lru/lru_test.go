@@ -156,11 +156,12 @@ func (s *LRUSuite) TestDefaultShardCount() {
 		wantShards int
 	}{
 		{title: "SingleEntry", size: 1, wantShards: 1},
-		{title: "SmallCacheUsesOneShard", size: 128, wantShards: 1},
-		{title: "JustUnderTwoFullShards", size: 511, wantShards: 1},
-		{title: "TwoFullShards", size: 512, wantShards: 2},
-		{title: "MidSize", size: 8192, wantShards: 32},
-		{title: "ReachesDefaultShards", size: 16384, wantShards: DefaultShards},
+		{title: "SmallCacheUsesOneShard", size: 100, wantShards: 1},
+		{title: "JustUnderTwoFullShards", size: 127, wantShards: 1},
+		{title: "TwoFullShards", size: 128, wantShards: 2},
+		{title: "MidSize", size: 2048, wantShards: 32},
+		{title: "JustUnderDefaultShards", size: 4095, wantShards: 32},
+		{title: "ReachesDefaultShards", size: 4096, wantShards: DefaultShards},
 		{title: "LargeCacheCappedAtDefaultShards", size: 1 << 20, wantShards: DefaultShards},
 	}
 
@@ -179,7 +180,7 @@ func (s *LRUSuite) TestSmallCacheKeepsAllDistinctKeys() {
 		title string
 		size  int
 	}{
-		{title: "SizeBelowOneShardMinimum", size: 128},
+		{title: "SizeBelowTwoShardMinimum", size: 127},
 	}
 
 	for _, tc := range testCases {
