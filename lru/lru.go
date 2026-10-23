@@ -14,12 +14,15 @@ import (
 	"time"
 )
 
-// DefaultShards is the number of shards a Cache uses when WithShards is not set.
+// DefaultShards is the largest number of shards a Cache uses when WithShards is
+// not set. Smaller caches get fewer shards (a power of two) so that each shard
+// holds at least 64 entries.
 const DefaultShards = 64
 
 const (
-	minShards = 1
-	maxShards = 1024
+	minShards          = 1
+	maxShards          = 1024
+	minEntriesPerShard = 64
 )
 
 // ErrInvalidSize is returned by New when the requested capacity is not positive.
@@ -100,7 +103,7 @@ func New[K comparable, V any](size int, opts ...Option[K, V]) (*Cache[K, V], err
 		return nil, ErrInvalidSize
 	}
 
-	cfg := config[K, V]{shards: DefaultShards}
+	cfg := config[K, V]{shards: defaultShards(size)}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -309,6 +312,14 @@ func (c *Cache[K, V]) Purge() {
 
 func (c *Cache[K, V]) shardFor(key K) *shard[K, V] {
 	return c.shards[maphash.Comparable(c.seed, key)%uint64(len(c.shards))]
+}
+
+func defaultShards(size int) int {
+	n := minShards
+	for n < DefaultShards && size/(n*2) >= minEntriesPerShard {
+		n *= 2
+	}
+	return n
 }
 
 func shardCapacity(total, shards, index int) int {
