@@ -514,6 +514,48 @@ func (s *CacheSuite) TestConcurrentUpdate() {
 	}
 }
 
+func (s *CacheSuite) TestStoredTTL() {
+	const defaultTTL = time.Minute
+	loadWith := func(exp *time.Duration) func(cc *Cache[string, int]) {
+		return func(cc *Cache[string, int]) {
+			cc.LoaderExpireFunc(func(string) (int, *time.Duration, error) {
+				return 1, exp, nil
+			})
+			_, _ = cc.Get(testKey)
+		}
+	}
+	testCases := []struct {
+		title string
+		write func(cc *Cache[string, int])
+		want  time.Duration
+	}{
+		{title: "SetUsesDefault", write: func(cc *Cache[string, int]) { cc.Set(testKey, 1) }, want: defaultTTL},
+		{title: "SetWithExpireZeroNeverExpires", write: func(cc *Cache[string, int]) { cc.SetWithExpire(testKey, 1, 0) }, want: 0},
+		{title: "SetWithExpireNegativeUsesDefault", write: func(cc *Cache[string, int]) { cc.SetWithExpire(testKey, 1, -1) }, want: defaultTTL},
+		{title: "SetWithExpireCustom", write: func(cc *Cache[string, int]) { cc.SetWithExpire(testKey, 1, 5*time.Second) }, want: 5 * time.Second},
+		{title: "UpdateUsesDefault", write: func(cc *Cache[string, int]) { cc.Update(testKey, func(v int) int { return v + 1 }) }, want: defaultTTL},
+		{title: "UpdateWithExpireZeroNeverExpires", write: func(cc *Cache[string, int]) { cc.UpdateWithExpire(testKey, func(v int) int { return v + 1 }, 0) }, want: 0},
+		{title: "LoaderNilDurationUsesDefault", write: loadWith(nil), want: defaultTTL},
+		{title: "LoaderZeroDurationNeverExpires", write: loadWith(new(time.Duration(0))), want: 0},
+		{title: "LoaderNegativeDurationUsesDefault", write: loadWith(new(-time.Second)), want: defaultTTL},
+		{title: "LoaderCustomDuration", write: loadWith(new(5 * time.Second)), want: 5 * time.Second},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.title, func() {
+			require := s.Require()
+			cc := New[string, int](defaultTTL)
+			tc.write(cc)
+
+			cc.mtx.RLock()
+			item, ok := cc.items[testKey]
+			cc.mtx.RUnlock()
+			require.True(ok)
+			require.Equal(tc.want, item.ttl)
+		})
+	}
+}
+
 func (s *CacheSuite) TestLoaderPanic() {
 	testCases := []struct {
 		title string

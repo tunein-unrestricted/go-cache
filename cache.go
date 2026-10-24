@@ -45,15 +45,15 @@ func New[TKey comparable, TValue any](exp time.Duration) *Cache[TKey, TValue] {
 	return cc
 }
 
-// Set a new key-value pair
+// Set a new key-value pair with the default expiration time
 func (c *Cache[TKey, TValue]) Set(key TKey, value TValue) {
-	c.setWithUpdateMutex(key, value, 0)
+	c.setWithUpdateMutex(key, value, c.ttl)
 	if c.addedFunc != nil {
 		c.addedFunc(key, value)
 	}
 }
 
-// SetWithExpire a new key-value pair with an expiration time. 0 = never expire
+// SetWithExpire a new key-value pair with an expiration time. 0 = never expire, negative = default expiration time
 func (c *Cache[TKey, TValue]) SetWithExpire(key TKey, value TValue, expiration time.Duration) {
 	if expiration < 0 {
 		expiration = c.ttl
@@ -65,12 +65,12 @@ func (c *Cache[TKey, TValue]) SetWithExpire(key TKey, value TValue, expiration t
 }
 
 // Update atomically updates a value using the given function to calculate the new value
-// Expiration time is updated once a value is updated
+// Expiration time is reset to the default once a value is updated
 func (c *Cache[TKey, TValue]) Update(key TKey, calc func(v TValue) TValue) {
-	c.UpdateWithExpire(key, calc, 0)
+	c.UpdateWithExpire(key, calc, c.ttl)
 }
 
-// UpdateWithExpire same as Update, but allows to set expiration
+// UpdateWithExpire same as Update, but allows to set expiration. 0 = never expire, negative = default expiration time
 func (c *Cache[TKey, TValue]) UpdateWithExpire(key TKey, calc func(v TValue) TValue, expiration time.Duration) {
 	if expiration < 0 {
 		expiration = c.ttl
@@ -160,10 +160,6 @@ func (c *Cache[TKey, TValue]) init(exp time.Duration) {
 }
 
 func (c *Cache[TKey, TValue]) set(key TKey, value TValue, ttl time.Duration) {
-	if ttl < 1 {
-		ttl = c.ttl
-	}
-
 	c.mtx.Lock()
 	now := time.Now()
 	c.items[key] = cacheItem[TValue]{
@@ -279,8 +275,8 @@ func (c *Cache[TKey, TValue]) getWithLoader(key TKey) (TValue, error) {
 		if e != nil {
 			return def, e
 		}
-		ttl := 0 * time.Second
-		if expiration != nil {
+		ttl := c.ttl
+		if expiration != nil && *expiration >= 0 {
 			ttl = *expiration
 		}
 		c.setWithUpdateMutex(key, v, ttl)

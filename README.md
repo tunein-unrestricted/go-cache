@@ -153,6 +153,8 @@ loaderWithExpire := func(key string) (User, *time.Duration, error) {
 cache.LoaderExpireFunc(loaderWithExpire)
 ```
 
+A `nil` or negative duration applies the cache's default TTL; a zero duration means the loaded value never expires.
+
 ### Atomic Updates
 
 Update existing values atomically:

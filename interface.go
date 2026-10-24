@@ -15,6 +15,7 @@ type Cacher[TKey comparable, TValue any] interface {
 	// Set inserts or updates the specified key-value pair.
 	Set(key TKey, value TValue)
 	// SetWithExpire inserts or updates the specified key-value pair with an expiration time.
+	// An expiration of 0 means the item never expires; a negative expiration uses the cache's default TTL.
 	SetWithExpire(key TKey, value TValue, expiration time.Duration)
 	// Get returns the value for the specified key if it is present in the cache.
 	// If the key is not present in the cache and the cache has LoaderFunc,
