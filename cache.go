@@ -160,7 +160,9 @@ func (c *Cache[TKey, TValue]) init(exp time.Duration) {
 }
 
 func (c *Cache[TKey, TValue]) set(key TKey, value TValue, ttl time.Duration) {
-	item := cacheItem[TValue]{
+	c.mtx.Lock()
+	now := time.Now()
+	c.items[key] = cacheItem[TValue]{
 		ttl:   ttl,
 		val:   value,
 		added: now,
